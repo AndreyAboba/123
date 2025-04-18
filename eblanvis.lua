@@ -1,5 +1,5 @@
--- Модуль Visuals: VehicleSpeed и VehicleFly
-local Visuals = {
+-- Модуль Vehicles: VehicleSpeed и VehicleFly
+local Vehicles = {
     VehicleSpeed = {
         Settings = {
             Enabled = { Value = false, Default = false },
@@ -31,9 +31,9 @@ local Visuals = {
     }
 }
 
-function Visuals.Init(UI, Core, notify)
-    local VehicleSpeed = Visuals.VehicleSpeed
-    local VehicleFly = Visuals.VehicleFly
+function Vehicles.Init(UI, Core, notify)
+    local VehicleSpeed = Vehicles.VehicleSpeed
+    local VehicleFly = Vehicles.VehicleFly
 
     -- Общая функция: получение текущего транспорта
     local function getCurrentVehicle()
@@ -150,7 +150,7 @@ function Visuals.Init(UI, Core, notify)
             end
         end)
 
-        notify("Скорость Транспорта", "Запущено с множителем: " .. VehicleSpeed.Settings.SpeedBoostMultiplier.Value, true)
+        notify("VehicleSpeed", "Started with SpeedBoostMultiplier: " .. VehicleSpeed.Settings.SpeedBoostMultiplier.Value, true)
     end
 
     VehicleSpeed.Stop = function()
@@ -166,12 +166,12 @@ function Visuals.Init(UI, Core, notify)
         VehicleSpeed.State.IsBoosting = false
         VehicleSpeed.State.CurrentVehicle = nil
         VehicleSpeed.State.OriginalAttributes = {}
-        notify("Скорость Транспорта", "Остановлено", true)
+        notify("VehicleSpeed", "Stopped", true)
     end
 
     VehicleSpeed.SetSpeedBoostMultiplier = function(newMultiplier)
         VehicleSpeed.Settings.SpeedBoostMultiplier.Value = newMultiplier
-        notify("Скорость Транспорта", "Множитель скорости: " .. newMultiplier, false)
+        notify("VehicleSpeed", "SpeedBoostMultiplier set to: " .. newMultiplier, false)
 
         if VehicleSpeed.State.IsBoosting then
             local vehicle, _ = getCurrentVehicle()
@@ -364,7 +364,7 @@ function Visuals.Init(UI, Core, notify)
             end
         end)
 
-        notify("Полёт Транспорта", "Запущено со скоростью: " .. VehicleFly.Settings.FlySpeed.Value, true)
+        notify("VehicleFly", "Started with FlySpeed: " .. VehicleFly.Settings.FlySpeed.Value, true)
     end
 
     VehicleFly.Stop = function()
@@ -380,12 +380,12 @@ function Visuals.Init(UI, Core, notify)
 
         VehicleFly.State.IsFlying = false
         VehicleFly.State.OriginalWheelData = {}
-        notify("Полёт Транспорта", "Остановлено", true)
+        notify("VehicleFly", "Stopped", true)
     end
 
     VehicleFly.SetFlySpeed = function(newSpeed)
         VehicleFly.Settings.FlySpeed.Value = newSpeed
-        notify("Полёт Транспорта", "Скорость полёта: " .. newSpeed, false)
+        notify("VehicleFly", "FlySpeed set to: " .. newSpeed, false)
     end
 
     -- Обработка посадки/высадки из транспорта
@@ -407,9 +407,9 @@ function Visuals.Init(UI, Core, notify)
 
     -- Настройка UI для VehicleSpeed
     if UI.Sections.VehicleSpeed then
-        UI.Sections.VehicleSpeed:Header({ Name = "Настройки Скорости Транспорта" })
+        UI.Sections.VehicleSpeed:Header({ Name = "Vehicle Speed Settings" })
         UI.Sections.VehicleSpeed:Toggle({
-            Name = "Включено",
+            Name = "Enabled",
             Default = VehicleSpeed.Settings.Enabled.Default,
             Callback = function(value)
                 VehicleSpeed.Settings.Enabled.Value = value
@@ -417,7 +417,7 @@ function Visuals.Init(UI, Core, notify)
             end
         })
         UI.Sections.VehicleSpeed:Slider({
-            Name = "Множитель скорости",
+            Name = "Speed Boost Multiplier",
             Minimum = 1,
             Maximum = 5,
             Default = VehicleSpeed.Settings.SpeedBoostMultiplier.Default,
@@ -425,25 +425,25 @@ function Visuals.Init(UI, Core, notify)
             Callback = VehicleSpeed.SetSpeedBoostMultiplier
         })
         UI.Sections.VehicleSpeed:Toggle({
-            Name = "Удерживать скорость",
+            Name = "Hold Speed",
             Default = VehicleSpeed.Settings.HoldSpeed.Default,
             Callback = function(value)
                 VehicleSpeed.Settings.HoldSpeed.Value = value
-                notify("Скорость Транспорта", "Удерживать скорость " .. (value and "включено" or "выключено"), true)
+                notify("VehicleSpeed", "Hold Speed " .. (value and "Enabled" or "Disabled"), true)
             end
         })
         UI.Sections.VehicleSpeed:Keybind({
-            Name = "Клавиша удержания",
+            Name = "Hold Keybind",
             Default = VehicleSpeed.Settings.HoldKeybind.Default,
             Callback = function(value)
                 if value ~= VehicleSpeed.Settings.HoldKeybind.Value then
                     VehicleSpeed.Settings.HoldKeybind.Value = value
-                    notify("Скорость Транспорта", "Клавиша удержания: " .. tostring(value), true)
+                    notify("VehicleSpeed", "Hold Keybind set to: " .. tostring(value), true)
                 end
             end
         })
         UI.Sections.VehicleSpeed:Keybind({
-            Name = "Клавиша переключения",
+            Name = "Toggle Key",
             Default = VehicleSpeed.Settings.ToggleKey.Default,
             Callback = function(value)
                 VehicleSpeed.Settings.ToggleKey.Value = value
@@ -454,7 +454,7 @@ function Visuals.Init(UI, Core, notify)
                         VehicleSpeed.Start()
                     end
                 else
-                    notify("Скорость Транспорта", "Включите скорость транспорта для использования клавиши.", true)
+                    notify("VehicleSpeed", "Enable Vehicle Speed to use keybind.", true)
                 end
             end
         })
@@ -462,9 +462,9 @@ function Visuals.Init(UI, Core, notify)
 
     -- Настройка UI для VehicleFly
     if UI.Sections.VehicleFly then
-        UI.Sections.VehicleFly:Header({ Name = "Настройки Полёта Транспорта" })
+        UI.Sections.VehicleFly:Header({ Name = "Vehicle Fly Settings" })
         UI.Sections.VehicleFly:Toggle({
-            Name = "Включено",
+            Name = "Enabled",
             Default = VehicleFly.Settings.Enabled.Default,
             Callback = function(value)
                 VehicleFly.Settings.Enabled.Value = value
@@ -472,7 +472,7 @@ function Visuals.Init(UI, Core, notify)
             end
         })
         UI.Sections.VehicleFly:Slider({
-            Name = "Скорость полёта",
+            Name = "Fly Speed",
             Minimum = 10,
             Maximum = 200,
             Default = VehicleFly.Settings.FlySpeed.Default,
@@ -480,7 +480,7 @@ function Visuals.Init(UI, Core, notify)
             Callback = VehicleFly.SetFlySpeed
         })
         UI.Sections.VehicleFly:Keybind({
-            Name = "Клавиша переключения",
+            Name = "Toggle Key",
             Default = VehicleFly.Settings.ToggleKey.Default,
             Callback = function(value)
                 VehicleFly.Settings.ToggleKey.Value = value
@@ -491,11 +491,11 @@ function Visuals.Init(UI, Core, notify)
                         VehicleFly.Start()
                     end
                 else
-                    notify("Полёт Транспорта", "Включите полёт транспорта для использования клавиши.", true)
+                    notify("VehicleFly", "Enable Vehicle Fly to use keybind.", true)
                 end
-            end
+            }
         })
     end
 end
 
-return Visuals
+return Vehicles
