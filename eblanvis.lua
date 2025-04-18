@@ -3,140 +3,459 @@ local Visuals = {
     VehicleSpeed = {
         Settings = {
             Enabled = { Value = false, Default = false },
-            SpeedBoostMultiplier = { Value = 1.65, Default = 1.65 }
+            SpeedBoostMultiplier = { Value = 1.65, Default = 1.65 },
+            HoldSpeed = { Value = false, Default = false },
+            HoldKeybind = { Value = Enum.KeyCode.LeftShift, Default = Enum.KeyCode.LeftShift },
+            ToggleKey = { Value = Enum.KeyCode.F, Default = Enum.KeyCode.F }
         },
         State = {
             IsBoosting = false,
-            CurrentVehicle = nil
+            OriginalAttributes = {},
+            CurrentVehicle = nil,
+            Connection = nil
         }
     },
     VehicleFly = {
         Settings = {
             Enabled = { Value = false, Default = false },
-            FlySpeed = { Value = 50, Default = 50 }
+            FlySpeed = { Value = 50, Default = 50 },
+            ToggleKey = { Value = Enum.KeyCode.G, Default = Enum.KeyCode.G }
         },
         State = {
             IsFlying = false,
-            FlyBodyVelocity = nil
+            FlyBodyVelocity = nil,
+            LastWheelReset = 0,
+            OriginalWheelData = {},
+            Connection = nil
         }
     }
 }
 
 function Visuals.Init(UI, Core, notify)
+    local VehicleSpeed = Visuals.VehicleSpeed
+    local VehicleFly = Visuals.VehicleFly
+
     -- Общая функция: получение текущего транспорта
     local function getCurrentVehicle()
         local char = Core.PlayerData.LocalPlayer.Character
-        local humanoid = char and char.Humanoid
-        local seat = humanoid and humanoid.SeatPart
-        if seat and seat:IsA("VehicleSeat") then
-            return seat.Parent, seat
+        if char and char.Humanoid and char.Humanoid.SeatPart and char.Humanoid.SeatPart:IsA("VehicleSeat") then
+            local vehicle = char.Humanoid.SeatPart.Parent
+            if vehicle:IsDescendantOf(Core.Services.Workspace.Vehicles) then
+                return vehicle, char.Humanoid.SeatPart
+            end
         end
         return nil, nil
     end
 
-    -- VehicleSpeed: функции
-    local function applyVehicleSpeed(vehicle, multiplier)
-        local motors = vehicle and vehicle:FindFirstChild("Motors")
-        if motors then
-            local baseSpeed = motors:GetAttribute("forwardMaxSpeed") or 35
-            motors:SetAttribute("forwardMaxSpeed", baseSpeed * multiplier)
+    -- Проверка, является ли транспорт ATV
+    local function isATV(vehicle)
+        if vehicle and vehicle.Name:lower():find("atv") then
+            return true
         end
+        return false
     end
 
-    local function resetVehicleSpeed(vehicle)
-        local motors = vehicle and vehicle:FindFirstChild("Motors")
-        if motors then
-            motors:SetAttribute("forwardMaxSpeed", 35)
-        end
-    end
-
-    local function startVehicleSpeed()
-        Core.Services.RunService.Heartbeat:Connect(function()
-            if not Visuals.VehicleSpeed.Settings.Enabled.Value then return end
-            local vehicle, seat = getCurrentVehicle()
-            if vehicle then
-                if vehicle ~= Visuals.VehicleSpeed.State.CurrentVehicle then
-                    if Visuals.VehicleSpeed.State.CurrentVehicle then
-                        resetVehicleSpeed(Visuals.VehicleSpeed.State.CurrentVehicle)
+    -- Стабилизация колёс
+    local function stabilizeWheels(vehicle, seat)
+        for _, part in ipairs(vehicle:GetDescendants()) do
+            if part:IsA("BasePart") and part.Name:lower():find("wheel") then
+                part.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+                part.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                for _, constraint in ipairs(part:GetChildren()) do
+                    if constraint:IsA("SpringConstraint") then
+                        constraint.Damping = math.clamp(constraint.Damping * 1.2, 0, 1000)
+                        constraint.Stiffness = math.clamp(constraint.Stiffness * 1.2, 0, 5000)
+                    elseif constraint:IsA("HingeConstraint") then
+                        constraint.AngularVelocity = math.clamp(constraint.AngularVelocity, -50, 50)
                     end
-                    Visuals.VehicleSpeed.State.CurrentVehicle = vehicle
                 end
-                applyVehicleSpeed(vehicle, Visuals.VehicleSpeed.Settings.SpeedBoostMultiplier.Value)
-            elseif Visuals.VehicleSpeed.State.CurrentVehicle then
-                resetVehicleSpeed(Visuals.VehicleSpeed.State.CurrentVehicle)
-                Visuals.VehicleSpeed.State.CurrentVehicle = nil
+            end
+        end
+    end
+
+    -- Сброс характеристик транспорта
+    local function resetVehicleAttributes(vehicle)
+        if not vehicle then return end
+        local motors = vehicle:FindFirstChild("Motors")
+        if not motors then return end
+
+        local attributes = VehicleSpeed.State.OriginalAttributes[vehicle]
+        if attributes then
+            motors:SetAttribute("forwardMaxSpeed", attributes.forwardMaxSpeed)
+            motors:SetAttribute("nitroMaxSpeed", attributes.nitroMaxSpeed)
+            motors:SetAttribute("acceleration", attributes.acceleration)
+        end
+    end
+
+    -- Применение характеристик с учётом множителя
+    local function applyVehicleAttributes(vehicle, multiplier)
+        if not vehicle then return end
+        local motors = vehicle:FindFirstChild("Motors")
+        if not motors or not VehicleSpeed.State.OriginalAttributes[vehicle] then return end
+
+        local effectiveMultiplier = isATV(vehicle) and math.min(multiplier, 1.55) or multiplier
+        motors:SetAttribute("forwardMaxSpeed", VehicleSpeed.State.OriginalAttributes[vehicle].forwardMaxSpeed * effectiveMultiplier)
+        motors:SetAttribute("nitroMaxSpeed", VehicleSpeed.State.OriginalAttributes[vehicle].nitroMaxSpeed * effectiveMultiplier)
+        motors:SetAttribute("acceleration", VehicleSpeed.State.OriginalAttributes[vehicle].acceleration * effectiveMultiplier)
+    end
+
+    -- Функции VehicleSpeed
+    VehicleSpeed.Start = function()
+        if VehicleSpeed.State.Connection then
+            VehicleSpeed.State.Connection:Disconnect()
+            VehicleSpeed.State.Connection = nil
+        end
+
+        VehicleSpeed.State.Connection = Core.Services.RunService.Heartbeat:Connect(function()
+            if not VehicleSpeed.Settings.Enabled.Value then return end
+
+            local vehicle, seat = getCurrentVehicle()
+            if not vehicle then
+                if VehicleSpeed.State.IsBoosting and VehicleSpeed.State.CurrentVehicle then
+                    resetVehicleAttributes(VehicleSpeed.State.CurrentVehicle)
+                    VehicleSpeed.State.IsBoosting = false
+                    VehicleSpeed.State.CurrentVehicle = nil
+                end
+                return
+            end
+
+            local motors = vehicle:FindFirstChild("Motors")
+            if not motors then return end
+
+            if vehicle ~= VehicleSpeed.State.CurrentVehicle then
+                if VehicleSpeed.State.CurrentVehicle then
+                    resetVehicleAttributes(VehicleSpeed.State.CurrentVehicle)
+                end
+                VehicleSpeed.State.CurrentVehicle = vehicle
+                if not VehicleSpeed.State.OriginalAttributes[vehicle] then
+                    VehicleSpeed.State.OriginalAttributes[vehicle] = {
+                        forwardMaxSpeed = motors:GetAttribute("forwardMaxSpeed") or 35,
+                        nitroMaxSpeed = motors:GetAttribute("nitroMaxSpeed") or 105,
+                        acceleration = motors:GetAttribute("acceleration") or 15
+                    }
+                end
+            end
+
+            local shouldBoost = VehicleSpeed.Settings.HoldSpeed.Value and Core.Services.UserInputService:IsKeyDown(VehicleSpeed.Settings.HoldKeybind.Value) or true
+
+            if shouldBoost then
+                if not VehicleSpeed.State.IsBoosting then
+                    VehicleSpeed.State.IsBoosting = true
+                end
+                applyVehicleAttributes(vehicle, VehicleSpeed.Settings.SpeedBoostMultiplier.Value)
+                stabilizeWheels(vehicle, seat)
+            elseif not shouldBoost and VehicleSpeed.State.IsBoosting then
+                resetVehicleAttributes(vehicle)
+                VehicleSpeed.State.IsBoosting = false
             end
         end)
+
+        notify("Скорость Транспорта", "Запущено с множителем: " .. VehicleSpeed.Settings.SpeedBoostMultiplier.Value, true)
     end
 
-    -- VehicleFly: функции
-    local function enableFlight(vehicle, seat, enable)
-        if not vehicle or not seat then return end
-        if enable and not Visuals.VehicleFly.State.IsFlying then
-            Visuals.VehicleFly.State.IsFlying = true
-            Visuals.VehicleFly.State.FlyBodyVelocity = Instance.new("BodyVelocity")
-            Visuals.VehicleFly.State.FlyBodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-            Visuals.VehicleFly.State.FlyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
-            Visuals.VehicleFly.State.FlyBodyVelocity.Parent = seat
-        elseif not enable and Visuals.VehicleFly.State.IsFlying then
-            Visuals.VehicleFly.State.IsFlying = false
-            if Visuals.VehicleFly.State.FlyBodyVelocity then
-                Visuals.VehicleFly.State.FlyBodyVelocity:Destroy()
-                Visuals.VehicleFly.State.FlyBodyVelocity = nil
+    VehicleSpeed.Stop = function()
+        if VehicleSpeed.State.Connection then
+            VehicleSpeed.State.Connection:Disconnect()
+            VehicleSpeed.State.Connection = nil
+        end
+
+        if VehicleSpeed.State.CurrentVehicle and VehicleSpeed.State.IsBoosting then
+            resetVehicleAttributes(VehicleSpeed.State.CurrentVehicle)
+        end
+
+        VehicleSpeed.State.IsBoosting = false
+        VehicleSpeed.State.CurrentVehicle = nil
+        VehicleSpeed.State.OriginalAttributes = {}
+        notify("Скорость Транспорта", "Остановлено", true)
+    end
+
+    VehicleSpeed.SetSpeedBoostMultiplier = function(newMultiplier)
+        VehicleSpeed.Settings.SpeedBoostMultiplier.Value = newMultiplier
+        notify("Скорость Транспорта", "Множитель скорости: " .. newMultiplier, false)
+
+        if VehicleSpeed.State.IsBoosting then
+            local vehicle, _ = getCurrentVehicle()
+            if vehicle then
+                applyVehicleAttributes(vehicle, newMultiplier)
             end
         end
     end
 
-    local function updateFlight(vehicle, seat)
-        if not vehicle or not seat or not Visuals.VehicleFly.State.IsFlying then return end
-        local input = Core.Services.UserInputService
-        local look = Core.PlayerData.Camera.CFrame.LookVector
-        local moveDir = Vector3.new(0, 0, 0)
-        if input:IsKeyDown(Enum.KeyCode.W) then moveDir += look end
-        if input:IsKeyDown(Enum.KeyCode.S) then moveDir -= look end
-        if input:IsKeyDown(Enum.KeyCode.E) then moveDir += Vector3.new(0, 1, 0) end
-        if input:IsKeyDown(Enum.KeyCode.Q) then moveDir -= Vector3.new(0, 1, 0) end
-        Visuals.VehicleFly.State.FlyBodyVelocity.Velocity = moveDir.Magnitude > 0 and moveDir.Unit * Visuals.VehicleFly.Settings.FlySpeed.Value or Vector3.new(0, 0, 0)
+    -- Функции VehicleFly
+    VehicleFly.EnableFlight = function(vehicle, seat, enable)
+        if not vehicle or not seat then return end
+
+        if enable and not VehicleFly.State.IsFlying then
+            VehicleFly.State.IsFlying = true
+            VehicleFly.State.FlyBodyVelocity = Instance.new("BodyVelocity")
+            VehicleFly.State.FlyBodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+            VehicleFly.State.FlyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
+            VehicleFly.State.FlyBodyVelocity.Parent = seat
+
+            for _, part in ipairs(vehicle:GetDescendants()) do
+                if part:IsA("BasePart") and part.Name:lower():find("wheel") then
+                    VehicleFly.State.OriginalWheelData[part] = {
+                        Position = part.Position - seat.Position,
+                        Mass = part.Mass,
+                        Constraints = {}
+                    }
+                    for _, constraint in ipairs(part:GetChildren()) do
+                        if constraint:IsA("HingeConstraint") then
+                            VehicleFly.State.OriginalWheelData[part].Constraints.Hinge = {
+                                TargetAngle = constraint.TargetAngle,
+                                AngularVelocity = constraint.AngularVelocity
+                            }
+                        elseif constraint:IsA("SpringConstraint") then
+                            VehicleFly.State.OriginalWheelData[part].Constraints.Spring = {
+                                FreeLength = constraint.FreeLength,
+                                Stiffness = constraint.Stiffness,
+                                Damping = constraint.Damping
+                            }
+                        end
+                    end
+                end
+            end
+
+            seat.AssemblyLinearVelocity = Vector3.new(seat.AssemblyLinearVelocity.X, 10, seat.AssemblyLinearVelocity.Z)
+        elseif not enable and VehicleFly.State.IsFlying then
+            VehicleFly.State.IsFlying = false
+            if VehicleFly.State.FlyBodyVelocity then
+                VehicleFly.State.FlyBodyVelocity:Destroy()
+                VehicleFly.State.FlyBodyVelocity = nil
+            end
+
+            local pos = seat.Position
+            local _, yaw, _ = seat.CFrame:ToEulerAnglesYXZ()
+            seat.CFrame = CFrame.new(pos) * CFrame.Angles(0, yaw, 0)
+            seat.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+            seat.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+
+            for _, part in ipairs(vehicle:GetDescendants()) do
+                if part:IsA("BasePart") and part.Name:lower():find("wheel") then
+                    part.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+                    part.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                    local data = VehicleFly.State.OriginalWheelData[part]
+                    if data then
+                        for _, constraint in ipairs(part:GetChildren()) do
+                            if constraint:IsA("HingeConstraint") and data.Constraints.Hinge then
+                                constraint.AngularVelocity = 0
+                                constraint.TargetAngle = data.Constraints.Hinge.TargetAngle
+                            elseif constraint:IsA("SpringConstraint") and data.Constraints.Spring then
+                                constraint.FreeLength = data.Constraints.Spring.FreeLength
+                                constraint.Stiffness = data.Constraints.Spring.Stiffness
+                                constraint.Damping = data.Constraints.Spring.Damping
+                            end
+                        end
+                    end
+                end
+            end
+
+            for i = 1, 5 do
+                task.wait(0.1)
+                if not vehicle.Parent then break end
+                for _, part in ipairs(vehicle:GetDescendants()) do
+                    if part:IsA("BasePart") and part.Name:lower():find("wheel") then
+                        local data = VehicleFly.State.OriginalWheelData[part]
+                        if data then
+                            local errorDist = (part.Position - seat.Position - data.Position).Magnitude
+                            if errorDist > 0.05 and errorDist < 10 then
+                                local massFactor = math.clamp(1 / (data.Mass or 1), 0.1, 1)
+                                for _, constraint in ipairs(part:GetChildren()) do
+                                    if constraint:IsA("SpringConstraint") then
+                                        constraint.FreeLength -= errorDist * massFactor * 0.2
+                                    end
+                                end
+                            end
+                        end
+                        local roll, pitch = part.CFrame:ToEulerAnglesXYZ()
+                        if math.abs(roll) > math.rad(5) or math.abs(pitch) > math.rad(5) then
+                            for _, constraint in ipairs(part:GetChildren()) do
+                                if constraint:IsA("HingeConstraint") and data and data.Constraints.Hinge then
+                                    constraint.TargetAngle = data.Constraints.Hinge.TargetAngle
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
     end
 
-    local function startVehicleFly()
-        Core.Services.RunService.Heartbeat:Connect(function()
-            if not Visuals.VehicleFly.Settings.Enabled.Value then return end
+    VehicleFly.UpdateFlight = function(vehicle, seat)
+        if not vehicle or not seat or not VehicleFly.State.IsFlying or not VehicleFly.State.FlyBodyVelocity then return end
+
+        local humanoid = Core.PlayerData.LocalPlayer.Character and Core.PlayerData.LocalPlayer.Character:FindFirstChild("Humanoid")
+        if not humanoid or humanoid.SeatPart ~= seat then
+            VehicleFly.EnableFlight(vehicle, seat, false)
+            return
+        end
+
+        local look = Core.PlayerData.Camera.CFrame.LookVector
+        local right = Core.PlayerData.Camera.CFrame.RightVector
+        local moveDir = Vector3.new(0, 0, 0)
+
+        if Core.Services.UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir += look end
+        if Core.Services.UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir -= look end
+        if Core.Services.UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir -= right end
+        if Core.Services.UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir += right end
+        if Core.Services.UserInputService:IsKeyDown(Enum.KeyCode.E) then moveDir += Vector3.new(0, 1, 0) end
+        if Core.Services.UserInputService:IsKeyDown(Enum.KeyCode.Q) then moveDir -= Vector3.new(0, 1, 0) end
+
+        VehicleFly.State.FlyBodyVelocity.Velocity = moveDir.Magnitude > 0 and moveDir.Unit * VehicleFly.Settings.FlySpeed.Value or Vector3.new(0, 0, 0)
+
+        local pos = seat.Position
+        local flatLook = Vector3.new(look.X, 0, look.Z).Unit
+        seat.CFrame = CFrame.new(pos, pos + flatLook)
+
+        if tick() - VehicleFly.State.LastWheelReset > 0.05 then
+            VehicleFly.State.LastWheelReset = tick()
+            for _, part in ipairs(vehicle:GetDescendants()) do
+                if part:IsA("BasePart") and part.Name:lower():find("wheel") then
+                    part.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+                    part.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                    local data = VehicleFly.State.OriginalWheelData[part]
+                    if data then
+                        local errorDist = (part.Position - seat.Position - data.Position).Magnitude
+                        if errorDist > 0.05 and errorDist < 10 then
+                            local massFactor = math.clamp(1 / (data.Mass or 1), 0.1, 1)
+                            for _, constraint in ipairs(part:GetChildren()) do
+                                if constraint:IsA("SpringConstraint") then
+                                    constraint.FreeLength -= errorDist * massFactor * 0.2
+                                end
+                            end
+                        end
+                        local roll, pitch = part.CFrame:ToEulerAnglesXYZ()
+                        if math.abs(roll) > math.rad(5) or math.abs(pitch) > math.rad(5) then
+                            for _, constraint in ipairs(part:GetChildren()) do
+                                if constraint:IsA("HingeConstraint") and data.Constraints.Hinge then
+                                    constraint.AngularVelocity = 0
+                                    constraint.TargetAngle = data.Constraints.Hinge.TargetAngle
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    VehicleFly.Start = function()
+        if VehicleFly.State.Connection then
+            VehicleFly.State.Connection:Disconnect()
+            VehicleFly.State.Connection = nil
+        end
+
+        VehicleFly.State.Connection = Core.Services.RunService.Heartbeat:Connect(function()
+            if not VehicleFly.Settings.Enabled.Value then return end
+
             local vehicle, seat = getCurrentVehicle()
             if vehicle and seat then
-                if not Visuals.VehicleFly.State.IsFlying then
-                    enableFlight(vehicle, seat, true)
+                if not VehicleFly.State.IsFlying then
+                    VehicleFly.EnableFlight(vehicle, seat, true)
                 end
-                updateFlight(vehicle, seat)
-            elseif Visuals.VehicleFly.State.IsFlying then
-                local lastVehicle, lastSeat = getCurrentVehicle()
-                if lastVehicle and lastSeat then
-                    enableFlight(lastVehicle, lastSeat, false)
+                VehicleFly.UpdateFlight(vehicle, seat)
+            else
+                if VehicleFly.State.IsFlying then
+                    local lastVehicle, lastSeat = getCurrentVehicle()
+                    if lastVehicle and lastSeat then
+                        VehicleFly.EnableFlight(lastVehicle, lastSeat, false)
+                    end
                 end
             end
         end)
+
+        notify("Полёт Транспорта", "Запущено со скоростью: " .. VehicleFly.Settings.FlySpeed.Value, true)
     end
+
+    VehicleFly.Stop = function()
+        if VehicleFly.State.Connection then
+            VehicleFly.State.Connection:Disconnect()
+            VehicleFly.State.Connection = nil
+        end
+
+        local vehicle, seat = getCurrentVehicle()
+        if vehicle and seat and VehicleFly.State.IsFlying then
+            VehicleFly.EnableFlight(vehicle, seat, false)
+        end
+
+        VehicleFly.State.IsFlying = false
+        VehicleFly.State.OriginalWheelData = {}
+        notify("Полёт Транспорта", "Остановлено", true)
+    end
+
+    VehicleFly.SetFlySpeed = function(newSpeed)
+        VehicleFly.Settings.FlySpeed.Value = newSpeed
+        notify("Полёт Транспорта", "Скорость полёта: " .. newSpeed, false)
+    end
+
+    -- Обработка посадки/высадки из транспорта
+    Core.PlayerData.LocalPlayer.CharacterAdded:Connect(function(character)
+        local humanoid = character:WaitForChild("Humanoid")
+        humanoid.Seated:Connect(function(isSeated, seatPart)
+            if not isSeated then
+                if VehicleSpeed.Settings.Enabled.Value and VehicleSpeed.State.IsBoosting then
+                    VehicleSpeed.Stop()
+                    VehicleSpeed.Start()
+                end
+                if VehicleFly.Settings.Enabled.Value and VehicleFly.State.IsFlying then
+                    VehicleFly.Stop()
+                    VehicleFly.Start()
+                end
+            end
+        end)
+    end)
 
     -- Настройка UI для VehicleSpeed
     if UI.Sections.VehicleSpeed then
         UI.Sections.VehicleSpeed:Header({ Name = "Настройки Скорости Транспорта" })
         UI.Sections.VehicleSpeed:Toggle({
             Name = "Включено",
-            Default = Visuals.VehicleSpeed.Settings.Enabled.Default,
-            Callback = function(v)
-                Visuals.VehicleSpeed.Settings.Enabled.Value = v
-                if v then startVehicleSpeed() notify("Скорость Транспорта", "Включено", true) else notify("Скорость Транспорта", "Выключено", true) end
+            Default = VehicleSpeed.Settings.Enabled.Default,
+            Callback = function(value)
+                VehicleSpeed.Settings.Enabled.Value = value
+                if value then VehicleSpeed.Start() else VehicleSpeed.Stop() end
             end
         })
         UI.Sections.VehicleSpeed:Slider({
             Name = "Множитель скорости",
             Minimum = 1,
             Maximum = 5,
-            Default = Visuals.VehicleSpeed.Settings.SpeedBoostMultiplier.Default,
+            Default = VehicleSpeed.Settings.SpeedBoostMultiplier.Default,
             Precision = 2,
-            Callback = function(v)
-                Visuals.VehicleSpeed.Settings.SpeedBoostMultiplier.Value = v
-                notify("Скорость Транспорта", "Множитель: " .. v, false)
+            Callback = VehicleSpeed.SetSpeedBoostMultiplier
+        })
+        UI.Sections.VehicleSpeed:Toggle({
+            Name = "Удерживать скорость",
+            Default = VehicleSpeed.Settings.HoldSpeed.Default,
+            Callback = function(value)
+                VehicleSpeed.Settings.HoldSpeed.Value = value
+                notify("Скорость Транспорта", "Удерживать скорость " .. (value and "включено" or "выключено"), true)
+            end
+        })
+        UI.Sections.VehicleSpeed:Keybind({
+            Name = "Клавиша удержания",
+            Default = VehicleSpeed.Settings.HoldKeybind.Default,
+            Callback = function(value)
+                if value ~= VehicleSpeed.Settings.HoldKeybind.Value then
+                    VehicleSpeed.Settings.HoldKeybind.Value = value
+                    notify("Скорость Транспорта", "Клавиша удержания: " .. tostring(value), true)
+                end
+            end
+        })
+        UI.Sections.VehicleSpeed:Keybind({
+            Name = "Клавиша переключения",
+            Default = VehicleSpeed.Settings.ToggleKey.Default,
+            Callback = function(value)
+                VehicleSpeed.Settings.ToggleKey.Value = value
+                if VehicleSpeed.Settings.Enabled.Value then
+                    if VehicleSpeed.State.Connection then
+                        VehicleSpeed.Stop()
+                    else
+                        VehicleSpeed.Start()
+                    end
+                else
+                    notify("Скорость Транспорта", "Включите скорость транспорта для использования клавиши.", true)
+                end
             end
         })
     end
@@ -146,21 +465,34 @@ function Visuals.Init(UI, Core, notify)
         UI.Sections.VehicleFly:Header({ Name = "Настройки Полёта Транспорта" })
         UI.Sections.VehicleFly:Toggle({
             Name = "Включено",
-            Default = Visuals.VehicleFly.Settings.Enabled.Default,
-            Callback = function(v)
-                Visuals.VehicleFly.Settings.Enabled.Value = v
-                if v then startVehicleFly() notify("Полёт Транспорта", "Включено", true) else notify("Полёт Транспорта", "Выключено", true) end
+            Default = VehicleFly.Settings.Enabled.Default,
+            Callback = function(value)
+                VehicleFly.Settings.Enabled.Value = value
+                if value then VehicleFly.Start() else VehicleFly.Stop() end
             end
         })
         UI.Sections.VehicleFly:Slider({
             Name = "Скорость полёта",
             Minimum = 10,
             Maximum = 200,
-            Default = Visuals.VehicleFly.Settings.FlySpeed.Default,
+            Default = VehicleFly.Settings.FlySpeed.Default,
             Precision = 1,
-            Callback = function(v)
-                Visuals.VehicleFly.Settings.FlySpeed.Value = v
-                notify("Полёт Транспорта", "Скорость: " .. v, false)
+            Callback = VehicleFly.SetFlySpeed
+        })
+        UI.Sections.VehicleFly:Keybind({
+            Name = "Клавиша переключения",
+            Default = VehicleFly.Settings.ToggleKey.Default,
+            Callback = function(value)
+                VehicleFly.Settings.ToggleKey.Value = value
+                if VehicleFly.Settings.Enabled.Value then
+                    if VehicleFly.State.Connection then
+                        VehicleFly.Stop()
+                    else
+                        VehicleFly.Start()
+                    end
+                else
+                    notify("Полёт Транспорта", "Включите полёт транспорта для использования клавиши.", true)
+                end
             end
         })
     end
