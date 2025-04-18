@@ -1,5 +1,5 @@
--- Модуль Combat: AutoInteract
-local Combat = {
+-- Модуль Auto: AutoInteract
+local Auto = {
     AutoInteract = {
         Settings = {
             Enabled = { Value = false, Default = false },
@@ -25,8 +25,8 @@ local Combat = {
     }
 }
 
-function Combat.Init(UI, Core, notify)
-    local AutoInteract = Combat.AutoInteract
+function Auto.Init(UI, Core, notify)
+    local AutoInteract = Auto.AutoInteract
 
     -- Функция отладочного лога
     local function debugLog(...)
@@ -414,42 +414,42 @@ function Combat.Init(UI, Core, notify)
 
     -- Настройка UI
     if UI.Sections.AutoInteract then
-        UI.Sections.AutoInteract:Header({ Name = "Настройки АвтоВзаимодействия" })
+        UI.Sections.AutoInteract:Header({ Name = "AutoInteract Settings" })
         UI.Sections.AutoInteract:Toggle({
-            Name = "Включено",
+            Name = "Enabled",
             Default = AutoInteract.Settings.Enabled.Default,
             Callback = function(value)
                 AutoInteract.Settings.Enabled.Value = value
                 if value then
                     AutoInteract.Start()
-                    notify("АвтоВзаимодействие", "Включено", true)
+                    notify("AutoInteract", "Enabled", true)
                 else
-                    notify("АвтоВзаимодействие", "Выключено", true)
+                    notify("AutoInteract", "Disabled", true)
                 end
             end
         })
         UI.Sections.AutoInteract:Dropdown({
-            Name = "Объект",
+            Name = "Target Object",
             Options = {"Bin", "Dumpster", "AirDrop"},
             Default = AutoInteract.Settings.TargetObject.Default,
             Callback = function(value)
                 AutoInteract.Settings.TargetObject.Value = value
-                notify("АвтоВзаимодействие", "Объект установлен: " .. value, true)
+                notify("AutoInteract", "Target Object set to: " .. value, true)
             end
         })
         UI.Sections.AutoInteract:Slider({
-            Name = "Макс. расстояние",
+            Name = "Max Distance",
             Minimum = 5,
             Maximum = 50,
             Default = AutoInteract.Settings.MaxDistance.Default,
             Precision = 1,
             Callback = function(value)
                 AutoInteract.Settings.MaxDistance.Value = value
-                notify("АвтоВзаимодействие", "Макс. расстояние: " .. value, false)
+                notify("AutoInteract", "Max Distance set to: " .. value, false)
             end
         })
         UI.Sections.AutoInteract:Slider({
-            Name = "Снижение времени удержания",
+            Name = "Minus Hold Time",
             Minimum = 0,
             Maximum = 100,
             Default = AutoInteract.Settings.MinusHoldTime.Default,
@@ -457,40 +457,40 @@ function Combat.Init(UI, Core, notify)
             Suffix = "%",
             Callback = function(value)
                 AutoInteract.Settings.MinusHoldTime.Value = value
-                notify("АвтоВзаимодействие", "Снижение времени удержания: " .. value .. "%", false)
+                notify("AutoInteract", "Minus Hold Time set to: " .. value .. "%", false)
             end
         })
         UI.Sections.AutoInteract:Slider({
-            Name = "Мин. расстояние между объектами",
+            Name = "Min Distance Between Objects",
             Minimum = 1,
             Maximum = 20,
             Default = AutoInteract.Settings.MinDistanceBetweenObjects.Default,
             Precision = 1,
             Callback = function(value)
                 AutoInteract.Settings.MinDistanceBetweenObjects.Value = value
-                notify("АвтоВзаимодействие", "Мин. расстояние между объектами: " .. value, false)
+                notify("AutoInteract", "Min Distance Between Objects set to: " .. value, false)
             end
         })
         UI.Sections.AutoInteract:Slider({
-            Name = "Задержка активации",
+            Name = "Activation Delay",
             Minimum = 0.1,
             Maximum = 5,
             Default = AutoInteract.Settings.ActivationDelay.Default,
             Precision = 1,
             Callback = function(value)
                 AutoInteract.Settings.ActivationDelay.Value = value
-                notify("АвтоВзаимодействие", "Задержка активации: " .. value, false)
+                notify("AutoInteract", "Activation Delay set to: " .. value, false)
             end
         })
         UI.Sections.AutoInteract:Toggle({
-            Name = "Включить отладочные логи",
+            Name = "Enable Debug Logs",
             Default = AutoInteract.Settings.EnableDebugLogs.Default,
             Callback = function(value)
                 AutoInteract.Settings.EnableDebugLogs.Value = value
-                notify("АвтоВзаимодействие", "Отладочные логи " .. (value and "включены" or "выключены"), false)
-            end
+                notify("AutoInteract", "Debug Logs " .. (value and "Enabled" or "Disabled"), false)
+            }
         })
     end
 end
 
-return Combat
+return Auto
