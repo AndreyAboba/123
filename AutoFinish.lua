@@ -13,6 +13,7 @@ function AutoFinish.Init(UI, Core, notify)
     local lastCheck = 0
     local activePlayers = {}
     local playerFriendCache = {} -- Кэш для проверки друзей
+    local lastFriendsList = nil -- Кэш для отслеживания изменений FriendsList
 
     local function processPlayer(player)
         if player == Core.PlayerData.LocalPlayer then return end
@@ -46,6 +47,14 @@ function AutoFinish.Init(UI, Core, notify)
         local localPos = localRoot.Position
         local distanceLimitSqr = AutoFinishConfig.DistanceLimit * AutoFinishConfig.DistanceLimit
 
+        -- Проверка, изменился ли FriendsList
+        if lastFriendsList ~= Core.Services.FriendsList then
+            lastFriendsList = Core.Services.FriendsList
+            for player in pairs(playerFriendCache) do
+                playerFriendCache[player] = nil
+            end
+        end
+
         for player in pairs(activePlayers) do
             -- Проверка на друга
             local isFriend = playerFriendCache[player]
@@ -58,6 +67,10 @@ function AutoFinish.Init(UI, Core, notify)
             -- Поиск персонажа в Workspace
             local character = Core.Services.Workspace:FindFirstChild(player.Name)
             if not character then continue end
+
+            -- Проверка на сейфзону
+            local isSafeZoneProtected = character:GetAttribute("IsSafeZoneProtected")
+            if isSafeZoneProtected then continue end
 
             local humanoid = character:FindFirstChildOfClass("Humanoid")
             local rootPart = character:FindFirstChild("HumanoidRootPart")
@@ -90,11 +103,7 @@ function AutoFinish.Init(UI, Core, notify)
                     notify("AutoFinish", "AutoFinish " .. (value and "Enabled" or "Disabled"), true)
                 end
             }, "AutoFinishEnabled")
-        else
-            warn("Failed to create AutoFinish section in Auto tab")
         end
-    else
-        warn("Auto tab not found in UI.Tabs")
     end
 end
 
