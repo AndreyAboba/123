@@ -6,14 +6,14 @@ function AutoFinish.Init(UI, Core, notify)
     }
 
     local AutoFinishConfig = {
-        DistanceLimit = 30, -- Ограничение расстояния в 30 метров
-        CheckInterval = 0.5 -- Проверка каждые 0.5 секунды
+        DistanceLimit = 30,
+        CheckInterval = 0.5
     }
 
     local lastCheck = 0
     local activePlayers = {}
-    local playerFriendCache = {} -- Кэш для проверки друзей
-    local lastFriendsList = nil -- Кэш для отслеживания изменений FriendsList
+    local playerFriendCache = {}
+    local lastFriendsList = nil
 
     local function processPlayer(player)
         if player == Core.PlayerData.LocalPlayer then return end
@@ -47,7 +47,6 @@ function AutoFinish.Init(UI, Core, notify)
         local localPos = localRoot.Position
         local distanceLimitSqr = AutoFinishConfig.DistanceLimit * AutoFinishConfig.DistanceLimit
 
-        -- Проверка, изменился ли FriendsList
         if lastFriendsList ~= Core.Services.FriendsList then
             lastFriendsList = Core.Services.FriendsList
             for player in pairs(playerFriendCache) do
@@ -56,7 +55,6 @@ function AutoFinish.Init(UI, Core, notify)
         end
 
         for player in pairs(activePlayers) do
-            -- Проверка на друга
             local isFriend = playerFriendCache[player]
             if isFriend == nil then
                 isFriend = Core.Services.FriendsList and Core.Services.FriendsList[player.Name:lower()] or false
@@ -64,11 +62,9 @@ function AutoFinish.Init(UI, Core, notify)
             end
             if isFriend then continue end
 
-            -- Поиск персонажа в Workspace
             local character = Core.Services.Workspace:FindFirstChild(player.Name)
             if not character then continue end
 
-            -- Проверка на сейфзону
             local isSafeZoneProtected = character:GetAttribute("IsSafeZoneProtected")
             if isSafeZoneProtected then continue end
 
@@ -90,13 +86,12 @@ function AutoFinish.Init(UI, Core, notify)
         end
     end)
 
-    -- Создание новой секции в табе Auto
     if UI.Tabs and UI.Tabs.Auto then
         local AutoFinishSection = UI.Tabs.Auto:Section({ Name = "AutoFinish", Side = "Left" })
         if AutoFinishSection then
-            AutoFinishSection:Header({ Name = "AutoFinish Settings" })
+            AutoFinishSection:Header({ Name = "AutoFinish" })
             AutoFinishSection:Toggle({
-                Name = "AutoFinish Enabled",
+                Name = "Enabled",
                 Default = State.AutoFinishEnabled,
                 Callback = function(value)
                     State.AutoFinishEnabled = value
