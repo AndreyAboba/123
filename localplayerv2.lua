@@ -138,6 +138,10 @@ local function isInVehicle(rootPart)
     return false
 end
 
+local function isInputFocused()
+    return Services.UserInputService:GetFocusedTextBox() ~= nil
+end
+
 -- Timer Functions
 local Timer = {}
 Timer.Start = function()
@@ -617,6 +621,7 @@ local function SetupUI(UI)
             Callback = function(value)
                 TimerStatus.Key = value
                 LocalPlayer.Config.Timer.ToggleKey = value
+                if isInputFocused() then return end
                 if TimerStatus.Enabled then
                     if TimerStatus.Running then Timer.Stop() else Timer.Start() end
                 else
@@ -643,6 +648,7 @@ local function SetupUI(UI)
             Callback = function(value)
                 DisablerStatus.Key = value
                 LocalPlayer.Config.Disabler.ToggleKey = value
+                if isInputFocused() then return end
                 if DisablerStatus.Enabled then
                     if DisablerStatus.Running then Disabler.Stop() else Disabler.Start() end
                 else
@@ -742,6 +748,7 @@ local function SetupUI(UI)
             Callback = function(value)
                 SpeedStatus.Key = value
                 LocalPlayer.Config.Speed.ToggleKey = value
+                if isInputFocused() then return end
                 if SpeedStatus.Enabled then
                     if SpeedStatus.Running then Speed.Stop() else Speed.Start() end
                 else
@@ -812,6 +819,7 @@ local function SetupUI(UI)
             Callback = function(value)
                 TickSpeedStatus.Key = value
                 LocalPlayer.Config.TickSpeed.ToggleKey = value
+                if isInputFocused() then return end
                 if TickSpeedStatus.Enabled then
                     if TickSpeedStatus.Running then TickSpeed.Stop() else TickSpeed.Start() end
                 else
@@ -861,6 +869,7 @@ local function SetupUI(UI)
             Callback = function(value)
                 HighJumpStatus.Key = value
                 LocalPlayer.Config.HighJump.JumpKey = value
+                if isInputFocused() then return end
                 HighJump.Trigger()
             end
         }, "HighJumpKey")
