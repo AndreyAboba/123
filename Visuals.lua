@@ -43,7 +43,7 @@ function Visuals.Init(UI, Core, notify)
         LastUpdateTimes = {}, -- Время последнего обновления для каждого игрока
         CloseDistance = 50, -- Расстояние для 50 FPS
         NearFPS = 50, -- FPS для близких игроков
-        FarFPS = 30 -- FPS для дальних игроков
+        FarFPS = 20 -- FPS для дальних игроков (изменено с 30 на 20)
     }
 
     local Cache = { TextBounds = {}, LastGradientUpdate = 0, PlayerCache = {} }
@@ -603,8 +603,9 @@ function Visuals.Init(UI, Core, notify)
             end
             local feetPos = camera:WorldToViewportPoint(Vector3.new(rootPart.Position.X, lowestPoint, rootPart.Position.Z))
 
-            local height = math.abs(headPos.Y - feetPos.Y)
-            local width = math.min(height * 0.6, 100)
+            -- Стабильный расчёт размеров ESP
+            local height = math.max(10, math.min(200, math.abs(headPos.Y - feetPos.Y))) -- Ограничение от 10 до 200
+            local width = math.max(6, math.min(120, height * 0.6)) -- Ограничение ширины пропорционально высоте
 
             local isFriend = esp.LastIsFriend
             if esp.LastFriendsList ~= Core.Services.FriendsList or esp.LastIsFriend == nil then
