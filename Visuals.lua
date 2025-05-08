@@ -17,7 +17,7 @@ function Visuals.Init(UI, Core, notify)
 
     local ESP = {
         Settings = {
-            Enabled = { Value = false, Default = false },
+            Enabled = { Value = true, Default = true }, -- Включаем ESP по умолчанию для теста
             EnemyColor = { Value = Color3.fromRGB(255, 0, 0), Default = Color3.fromRGB(255, 0, 0) },
             FriendColor = { Value = Color3.fromRGB(0, 255, 0), Default = Color3.fromRGB(0, 255, 0) },
             TeamCheck = { Value = true, Default = true },
@@ -45,6 +45,15 @@ function Visuals.Init(UI, Core, notify)
 
     local Cache = { TextBounds = {}, LastGradientUpdate = 0, PlayerCache = {} }
     local Elements = { Watermark = {} }
+
+    -- Тестовый квадрат для проверки рендеринга Drawing API
+    local testSquare = Drawing.new("Square")
+    testSquare.Position = Vector2.new(100, 100)
+    testSquare.Size = Vector2.new(50, 50)
+    testSquare.Color = Color3.fromRGB(255, 255, 0)
+    testSquare.Filled = true
+    testSquare.Visible = true
+    print("Test square created at position (100, 100) with size 50x50")
 
     local buttonGui = Instance.new("ScreenGui")
     buttonGui.Name = "MenuToggleButtonGui"
@@ -424,11 +433,15 @@ function Visuals.Init(UI, Core, notify)
         local test = Drawing.new("Quad")
         test:Remove()
     end)
+    print("Supports Drawing Quad: " .. tostring(supportsQuad))
 
     local lastUpdate = 0
 
     local function createESP(player)
-        if ESP.Elements[player] then return end
+        if ESP.Elements[player] then
+            print("ESP already exists for player: " .. player.Name)
+            return
+        end
 
         print("Creating ESP for player: " .. player.Name)
 
@@ -497,6 +510,7 @@ function Visuals.Init(UI, Core, notify)
 
         ESP.Elements[player] = esp
         Cache.PlayerCache[player] = { Character = nil, RootPart = nil, Humanoid = nil, Head = nil }
+        print("ESP created for player: " .. player.Name .. ", Total ESP elements: " .. #ESP.Elements)
     end
 
     local function removeESP(player)
@@ -512,6 +526,7 @@ function Visuals.Init(UI, Core, notify)
         end
         ESP.Elements[player] = nil
         Cache.PlayerCache[player] = nil
+        print("Removed ESP for player: " .. player.Name)
     end
 
     local function updateESP()
@@ -533,14 +548,30 @@ function Visuals.Init(UI, Core, notify)
         if currentTime - lastUpdate < ESP.UpdateInterval then return end
         lastUpdate = currentTime
 
-        print("Updating ESP at time: " .. currentTime)
+        print("Updating ESP at time: " .. currentTime .. ", Total players in ESP.Elements: " .. #ESP.Elements)
 
         local camera = Core.PlayerData.Camera
-        local playerCount = #Core.Services.Players:GetPlayers()
-        print("Player count: " .. playerCount)
+        if not camera then
+            print("Camera not found in Core.PlayerData.Camera")
+            return
+        end
 
-        for _, player in pairs(Core.Services.Players:GetPlayers()) do
+        local players = Core.Services.Players:GetPlayers()
+        print("Total players in game: " .. #players)
+
+        for _, player in pairs(players) do
             if player == Core.PlayerData.LocalPlayer then continue end
+
+            if not ESP.Elements[player] then
+                print("Player " .. player.Name .. " not in ESP.Elements, creating...")
+                createESP(player)
+            end
+
+            local esp = ESP.Elements[player]
+            if not esp then
+                print("ESP for player " .. player.Name .. " not found after creation attempt")
+                continue
+            end
 
             local cache = Cache.PlayerCache[player] or {}
             local character = player.Character
@@ -550,32 +581,14 @@ function Visuals.Init(UI, Core, notify)
                 cache.Humanoid = character and character:FindFirstChild("Humanoid")
                 cache.Head = character and character:FindFirstChild("Head")
                 Cache.PlayerCache[player] = cache
-                print("Updated cache for player: " .. player.Name .. ", Character: " .. (character and "exists" or "nil"))
+                print("Updated cache for player: " .. player.Name .. ", Character: " .. (character and "exists" or "nil") .. ", RootPart: " .. (cache.RootPart and "exists" or "nil"))
             end
 
             local rootPart, humanoid, head = cache.RootPart, cache.Humanoid, cache.Head
-            if not ESP.Elements[player] then
-                createESP(player)
-            end
-
-            local esp = ESP.Elements[player]
-            if not esp then
-                print("ESP for player " .. player.Name .. " not found")
-                continue
-            end
 
             if rootPart and humanoid and humanoid.Health > 0 then
                 local rootPos, onScreen = camera:WorldToViewportPoint(rootPart.Position)
-                local positionChanged = not esp.LastPosition or (rootPos - esp.LastPosition).Magnitude > 0.5
-                local healthChanged = not esp.LastHealth or math.abs(humanoid.Health - esp.LastHealth) > 0.1
-                local visibilityChanged = onScreen ~= esp.LastVisible
-                local timeSinceLastUpdate = currentTime - esp.LastUpdateTime
-                local speed = esp.LastPosition and (rootPos - esp.LastPosition).Magnitude / timeSinceLastUpdate or 0
-                local shouldUpdate = positionChanged or healthChanged or visibilityChanged or speed > 50
-
-                print("Player: " .. player.Name .. ", onScreen: " .. tostring(onScreen) .. ", shouldUpdate: " .. tostring(shouldUpdate))
-
-                if not shouldUpdate and esp.LastVisible then continue end
+                print("Player: " .. player.Name .. ", onScreen: " .. tostring(onScreen) .. ", Root position: (" .. rootPos.X .. ", " .. rootPos.Y .. ")")
 
                 esp.LastPosition = rootPos
                 esp.LastHealth = humanoid.Health
@@ -751,12 +764,15 @@ function Visuals.Init(UI, Core, notify)
                 esp.HealthBar.Foreground.Visible = false
                 esp.NameDrawing.Visible = false
                 if esp.NameGui then esp.NameGui.Visible = false end
+                print("Player: " .. player.Name .. " has no valid character, rootPart, or health")
             end
         end
     end
 
-    -- Убираем task.wait(1), чтобы инициализация происходила сразу
-    for _, player in pairs(Core.Services.Players:GetPlayers()) do
+    -- Инициализация всех текущих игроков
+    local players = Core.Services.Players:GetPlayers()
+    print("Initial player count: " .. #players)
+    for _, player in pairs(players) do
         if player ~= Core.PlayerData.LocalPlayer then
             createESP(player)
         end
@@ -764,6 +780,7 @@ function Visuals.Init(UI, Core, notify)
 
     Core.Services.Players.PlayerAdded:Connect(function(player)
         if player ~= Core.PlayerData.LocalPlayer then
+            print("Player added: " .. player.Name)
             createESP(player)
         end
     end)
