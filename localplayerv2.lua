@@ -631,7 +631,8 @@ local function removeFolders()
     end)
 end
 
-local function cleanupInvisible()
+local function cleanupInvisibleState()
+    -- Очистка всех переменных состояния
     if InvisibleStatus.AnimTrack then
         InvisibleStatus.AnimTrack:Stop()
         InvisibleStatus.AnimTrack:Destroy()
@@ -658,27 +659,29 @@ local function doClone()
     local humanoid, rootPart = getCharacterData()
     if not isCharacterValid(humanoid, rootPart) then return false end
 
-    -- Очистка предыдущего состояния, если оно некорректно
-    cleanupInvisible()
-
+    -- Сохраняем HipHeight и текущий root
     InvisibleStatus.HipHeight = humanoid.HipHeight
     InvisibleStatus.OldRoot = rootPart
     if not InvisibleStatus.OldRoot or not InvisibleStatus.OldRoot.Parent then
         return false
     end
 
+    -- Создаём временный родительский объект
     local tempParent = Instance.new("Model")
     tempParent.Parent = Services.Workspace
     LocalPlayerObj.Character.Parent = tempParent
 
+    -- Клонируем HumanoidRootPart
     InvisibleStatus.Clone = InvisibleStatus.OldRoot:Clone()
     InvisibleStatus.Clone.Parent = LocalPlayerObj.Character
     InvisibleStatus.OldRoot.Parent = Services.Workspace.CurrentCamera
     InvisibleStatus.Clone.CFrame = InvisibleStatus.OldRoot.CFrame
 
+    -- Устанавливаем новый PrimaryPart
     LocalPlayerObj.Character.PrimaryPart = InvisibleStatus.Clone
     LocalPlayerObj.Character.Parent = Services.Workspace
 
+    -- Обновляем Welds и Motor6D
     for _, v in pairs(LocalPlayerObj.Character:GetDescendants()) do
         if v:IsA("Weld") or v:IsA("Motor6D") then
             if v.Part0 == InvisibleStatus.OldRoot then
@@ -695,21 +698,29 @@ local function doClone()
 end
 
 local function revertClone()
+    -- Проверяем, что OldRoot всё ещё существует
+    if not InvisibleStatus.OldRoot or not InvisibleStatus.OldRoot:IsDescendantOf(Services.Workspace) then
+        cleanupInvisibleState()
+        return false
+    end
     local humanoid, _ = getCharacterData()
-    if not humanoid or humanoid.Health <= 0 or not InvisibleStatus.OldRoot or not InvisibleStatus.OldRoot:IsDescendantOf(Services.Workspace) then
-        cleanupInvisible()
+    if not humanoid or humanoid.Health <= 0 then
+        cleanupInvisibleState()
         return false
     end
 
+    -- Создаём временный родительский объект
     local tempParent = Instance.new("Model")
     tempParent.Parent = Services.Workspace
     LocalPlayerObj.Character.Parent = tempParent
 
+    -- Восстанавливаем оригинальный HumanoidRootPart
     InvisibleStatus.OldRoot.Parent = LocalPlayerObj.Character
     LocalPlayerObj.Character.PrimaryPart = InvisibleStatus.OldRoot
     LocalPlayerObj.Character.Parent = Services.Workspace
-    InvisibleStatus.OldRoot.CanCollide = true
 
+    -- Устанавливаем коллизию и восстанавливаем Welds/Motor6D
+    InvisibleStatus.OldRoot.CanCollide = true
     for _, v in pairs(LocalPlayerObj.Character:GetDescendants()) do
         if v:IsA("Weld") or v:IsA("Motor6D") then
             if v.Part0 == InvisibleStatus.Clone then
@@ -721,6 +732,7 @@ local function revertClone()
         end
     end
 
+    -- Удаляем клон и сбрасываем позицию
     if InvisibleStatus.Clone then
         local oldPos = InvisibleStatus.Clone.CFrame
         InvisibleStatus.Clone:Destroy()
@@ -728,13 +740,14 @@ local function revertClone()
         InvisibleStatus.OldRoot.CFrame = oldPos
     end
 
-    InvisibleStatus.OldRoot = nil
+    -- Восстанавливаем HipHeight
     if humanoid then
         humanoid.HipHeight = InvisibleStatus.HipHeight or 2
     end
 
-    cleanupInvisible()
-    return true
+    -- Очищаем состояние
+    InvisibleStatus.OldRoot = nil
+    InvisibleStatus.HipHeight = nil
 end
 
 local function animationTrickery()
@@ -776,16 +789,15 @@ Invisible.Toggle = function()
 
     InvisibleStatus.Running = not InvisibleStatus.Running
     if InvisibleStatus.Running then
+        -- Убедимся, что состояние чистое перед включением
+        cleanupInvisibleState()
         removeFolders()
         local success = doClone()
         if success then
             animationTrickery()
             InvisibleStatus.Connection = Services.RunService.PreSimulation:Connect(function(dt)
                 local humanoid, rootPart = getCharacterData()
-                if not isCharacterValid(humanoid, rootPart) or not InvisibleStatus.OldRoot then
-                    Invisible.Toggle() -- Отключаем, если персонаж не валиден
-                    return
-                end
+                if not isCharacterValid(humanoid, rootPart) or not InvisibleStatus.OldRoot then return end
                 local root = LocalPlayerObj.Character.PrimaryPart or LocalPlayerObj.Character:FindFirstChild("HumanoidRootPart")
                 if root then
                     local depthOffset = DEPTH_OFFSETS[InvisibleStatus.Mode] or 0.9588
@@ -800,7 +812,7 @@ Invisible.Toggle = function()
                 wait(1)
                 local newHumanoid = newChar:WaitForChild("Humanoid", 1)
                 if newHumanoid and InvisibleStatus.Running then
-                    cleanupInvisible()
+                    cleanupInvisibleState()
                     removeFolders()
                     Invisible.Toggle()
                 end
@@ -809,10 +821,10 @@ Invisible.Toggle = function()
             notify("Invisible", "Enabled with mode: " .. InvisibleStatus.Mode .. " (Depth: " .. DEPTH_OFFSETS[InvisibleStatus.Mode] .. ")", true)
         else
             InvisibleStatus.Running = false
-            cleanupInvisible()
             notify("Invisible", "Failed to enable invisibility!", true)
         end
     else
+        cleanupInvisibleState()
         revertClone()
         removeFolders()
         notify("Invisible", "Disabled", true)
@@ -917,9 +929,7 @@ local function SetupUI(UI)
         uiElements.SpeedMethod = UI.Sections.Speed:Dropdown({
             Name = "Method",
             Options = {"CFrame", "PulseTP"},
-            Default = Localگان
-
-Player.Config.Speed.Method,
+            Default = LocalPlayer.Config.Speed.Method,
             Callback = function(value)
                 Speed.SetMethod(value)
                 LocalPlayer.Config.Speed.Method = value
