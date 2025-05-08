@@ -12,7 +12,7 @@ function Visuals.Init(UI, Core, notify)
         showFPS = true,
         showTime = true,
         updateInterval = 0.5,
-        gradientUpdateInterval = 0.1
+        gradientUpdateInterval = 0.2 -- Увеличим интервал для снижения нагрузки
     }
 
     local ESP = {
@@ -39,10 +39,11 @@ function Visuals.Init(UI, Core, notify)
         Elements = {},
         GuiElements = {},
         LastNotificationTime = 0,
-        NotificationDelay = 5
+        NotificationDelay = 5,
+        UpdateInterval = 0.05 -- Добавим интервал обновления ESP (раз в 0.05 сек)
     }
 
-    local Cache = { TextBounds = {}, LastGradientUpdate = 0 }
+    local Cache = { TextBounds = {}, LastGradientUpdate = 0, PlayerCache = {} }
     local Elements = { Watermark = {} }
 
     local buttonGui = Instance.new("ScreenGui")
@@ -310,13 +311,22 @@ function Visuals.Init(UI, Core, notify)
         end
 
         updateSizes()
-        for _, label in pairs({elements.PlayerNameLabel, elements.FPSLabel, elements.TimeLabel}) do
-            if label then
-                label:GetPropertyChangedSignal("TextBounds"):Connect(function()
-                    Cache.TextBounds[label.Name] = label.TextBounds.X
-                    updateSizes()
-                end)
-            end
+        -- Оптимизация: обновляем размеры только при изменении текста
+        elements.PlayerNameLabel:GetPropertyChangedSignal("TextBounds"):Connect(function()
+            Cache.TextBounds.PlayerName = elements.PlayerNameLabel.TextBounds.X
+            updateSizes()
+        end)
+        if elements.FPSLabel then
+            elements.FPSLabel:GetPropertyChangedSignal("TextBounds"):Connect(function()
+                Cache.TextBounds.FPS = elements.FPSLabel.TextBounds.X
+                updateSizes()
+            end)
+        end
+        if elements.TimeLabel then
+            elements.TimeLabel:GetPropertyChangedSignal("TextBounds"):Connect(function()
+                Cache.TextBounds.Time = elements.TimeLabel.TextBounds.X
+                updateSizes()
+            end)
         end
     end
 
@@ -416,8 +426,7 @@ function Visuals.Init(UI, Core, notify)
         test:Remove()
     end)
 
-    local UPDATE_INTERVAL = 0.02
-    local lastUpdate, playerCache = 0, {}
+    local lastUpdate = 0
 
     local function createESP(player)
         if ESP.Elements[player] then return end
@@ -486,6 +495,7 @@ function Visuals.Init(UI, Core, notify)
         end
 
         ESP.Elements[player] = esp
+        Cache.PlayerCache[player] = { Character = nil, RootPart = nil, Humanoid = nil, Head = nil }
     end
 
     local function removeESP(player)
@@ -500,7 +510,7 @@ function Visuals.Init(UI, Core, notify)
             ESP.GuiElements[player] = nil
         end
         ESP.Elements[player] = nil
-        playerCache[player] = nil
+        Cache.PlayerCache[player] = nil
     end
 
     local function updateESP()
@@ -518,19 +528,28 @@ function Visuals.Init(UI, Core, notify)
         end
 
         local currentTime = tick()
-        if currentTime - lastUpdate < UPDATE_INTERVAL then return end
+        if currentTime - lastUpdate < ESP.UpdateInterval then return end
         lastUpdate = currentTime
 
-        local camera, time = Core.PlayerData.Camera, currentTime
+        local camera = Core.PlayerData.Camera
+        local playerCount = #Core.Services.Players:GetPlayers()
+        local dynamicInterval = ESP.UpdateInterval * math.max(1, playerCount / 10) -- Динамический интервал в зависимости от количества игроков
+        if currentTime - lastUpdate < dynamicInterval then return end
 
         for _, player in pairs(Core.Services.Players:GetPlayers()) do
             if player == Core.PlayerData.LocalPlayer then continue end
 
+            local cache = Cache.PlayerCache[player] or {}
             local character = player.Character
-            local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-            local humanoid = character and character:FindFirstChild("Humanoid")
-            local head = character and character:FindFirstChild("Head")
+            if cache.Character ~= character then
+                cache.Character = character
+                cache.RootPart = character and character:FindFirstChild("HumanoidRootPart")
+                cache.Humanoid = character and character:FindFirstChild("Humanoid")
+                cache.Head = character and character:FindFirstChild("Head")
+                Cache.PlayerCache[player] = cache
+            end
 
+            local rootPart, humanoid, head = cache.RootPart, cache.Humanoid, cache.Head
             if not ESP.Elements[player] then createESP(player) end
 
             local esp = ESP.Elements[player]
@@ -592,7 +611,7 @@ function Visuals.Init(UI, Core, notify)
 
                         local color = baseColor
                         if ESP.Settings.GradientEnabled.Value then
-                            local t = (math.sin(time * ESP.Settings.GradientSpeed.Value * 0.5) + 1) / 2
+                            local t = (math.sin(currentTime * ESP.Settings.GradientSpeed.Value * 0.5) + 1) / 2
                             color = gradColor1:Lerp(gradColor2, t)
                         end
 
@@ -679,7 +698,7 @@ function Visuals.Init(UI, Core, notify)
                     end
 
                     if ESP.Settings.ShowNames.Value then
-                        local t = (math.sin(time * ESP.Settings.GradientSpeed.Value * 0.5) + 1) / 2
+                        local t = ESP.Settings.GradientEnabled.Value and (math.sin(currentTime * ESP.Settings.GradientSpeed.Value * 0.5) + 1) / 2 or 0
                         local nameColor = ESP.Settings.GradientEnabled.Value and gradColor1:Lerp(gradColor2, t) or baseColor
                         local nameY = headPos.Y - 20
                         if ESP.Settings.HealthBarEnabled.Value and ESP.Settings.BarMethod.Value == "Top" then
