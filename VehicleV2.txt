@@ -42,7 +42,7 @@ local Vehicles = {
     }
 }
 
-function Vehicles.Init(UI, Core, notify)
+function Vehicles.Init(UI, Core, notify, InitRequire)
     local VehicleSpeed = Vehicles.VehicleSpeed
     local VehicleFly = Vehicles.VehicleFly
     local VehicleExploit = Vehicles.VehicleExploit
@@ -55,34 +55,16 @@ function Vehicles.Init(UI, Core, notify)
     local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
     local RunService = Core.Services.RunService
 
-    -- Попытка загрузки модулей через глобальное окружение
-    local globalRequire = getfenv().require or require -- Получаем глобальный require
-    local u5, u11
+    -- Загрузка модулей через InitRequire
+    local u5 = InitRequire(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Core"):WaitForChild("Net"))
+    local u11 = InitRequire(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Game"):WaitForChild("VehicleSystem"):WaitForChild("Vehicle"))
 
-    -- Проверка и загрузка Net
-    local netModule = ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Core"):WaitForChild("Net")
-    local successU5, resultU5 = pcall(function()
-        return globalRequire(netModule)
-    end)
-    if successU5 then
-        u5 = resultU5
-        print("u5 loaded successfully:", u5)
-    else
-        warn("Failed to require Net via globalRequire: " .. tostring(resultU5))
-        u5 = nil
+    -- Проверка загрузки модулей
+    if not u5 then
+        notify("Vehicles", "Net module failed to load. Lockpicking disabled.", true)
     end
-
-    -- Проверка и загрузка Vehicle
-    local vehicleModule = ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Game"):WaitForChild("VehicleSystem"):WaitForChild("Vehicle")
-    local successU11, resultU11 = pcall(function()
-        return globalRequire(vehicleModule)
-    end)
-    if successU11 then
-        u11 = resultU11
-        print("u11 loaded successfully:", u11)
-    else
-        warn("Failed to require Vehicle via globalRequire: " .. tostring(resultU11))
-        u11 = nil
+    if not u11 then
+        notify("Vehicles", "Vehicle module failed to load. Some features may be limited.", true)
     end
 
     -- Общая функция: получение текущего транспорта
