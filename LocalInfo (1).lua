@@ -32,10 +32,9 @@ local LocalInfo = {
     CurrentSafePercent = 0,
     UIConnection = nil,
     LastGradientColors = nil,
-    GradientUpdateTimes = {},
-    Elements = {}, -- Таблица для хранения UI-элементов
+    GradientUpdateTime = 0,
+    Elements = {},
 
-    -- Локальная конфигурация
     Config = {
         Enabled = false,
         UIStyleMode = "Circle",
@@ -60,16 +59,15 @@ local LocalInfo = {
     }
 }
 
--- Позиции сохраняются локально
 local savedFramePosition = UDim2.new(0, 500, 0, 50)
 local savedHandCirclePosition = UDim2.new(0, 490, 0, 40)
 local savedSafeCirclePosition = UDim2.new(0, 570, 0, 40)
+local UPDATE_INTERVAL = 1 / 30 -- 30 FPS для анимаций
+local GRADIENT_INTERVAL = 1 / 15 -- 15 FPS для градиентов
+local lastUpdate = 0
 
 local function setupGui(Core)
-    if not Core or not Core.Services or not Core.Services.CoreGuiService then
-        warn("LocalInfo: Failed to setup GUI - Core or Core.Services is nil")
-        return
-    end
+    if not Core or not Core.Services or not Core.Services.CoreGuiService then return end
     local screenGui = Instance.new("ScreenGui")
     screenGui.Name, screenGui.ResetOnSpawn, screenGui.IgnoreGuiInset = "InventoryAndSafeCapacityGui", false, true
     screenGui.Parent = Core.Services.CoreGuiService
@@ -87,15 +85,15 @@ local function createIconFrame(pos, img)
     return f, i
 end
 
-local function createProgressBar(pos)
+local function createProgressBar(pos, width, height)
     local f = Instance.new("Frame")
-    f.Size, f.Position, f.BackgroundColor3, f.BackgroundTransparency, f.BorderSizePixel = UDim2.new(0, LocalInfo.Config.PercentStyle.ProgressBarWidth, 0, LocalInfo.Config.PercentStyle.ProgressBarHeight), pos, Color3.fromRGB(5, 5, 5), 0.5, 0
+    f.Size, f.Position, f.BackgroundColor3, f.BackgroundTransparency, f.BorderSizePixel = UDim2.new(0, width, 0, height), pos, Color3.fromRGB(5, 5, 5), 0.5, 0
     Instance.new("UICorner", f).CornerRadius = UDim.new(0, 2)
     local b = Instance.new("Frame")
     b.Size, b.BackgroundTransparency, b.BorderSizePixel = UDim2.new(0, 0, 1, 0), 0, 0
     Instance.new("UICorner", b).CornerRadius = UDim.new(0, 2)
     local g = Instance.new("UIGradient")
-    g.Color, g.Rotation = LocalInfo.Config.GradientSettings.ColorSequence or ColorSequence.new(Color3.fromRGB(255, 255, 255)), 0
+    g.Color, g.Rotation = ColorSequence.new(Color3.fromRGB(255, 255, 255)), 0
     g.Parent = b
     b.Parent = f
     f.Parent = LocalInfo.Frame
@@ -115,10 +113,7 @@ local function createProgressLabel(pos)
 end
 
 local function makeDraggable(f)
-    if not f or not LocalInfo.Core or not LocalInfo.Core.Services or not LocalInfo.Core.Services.UserInputService then
-        warn("LocalInfo: Failed to make draggable - Core or Core.Services is nil")
-        return
-    end
+    if not f or not LocalInfo.Core or not LocalInfo.Core.Services or not LocalInfo.Core.Services.UserInputService then return end
     local dragging, dragStart, startPos = false, nil, nil
     LocalInfo.Core.Services.UserInputService.InputBegan:Connect(function(i)
         if i.UserInputType == Enum.UserInputType.MouseButton1 then
@@ -142,10 +137,7 @@ local function makeDraggable(f)
 end
 
 local function makeDraggableV2(element)
-    if not element or not LocalInfo.Core or not LocalInfo.Core.Services or not LocalInfo.Core.Services.UserInputService or not LocalInfo.Core.Services.Workspace then
-        warn("LocalInfo: Failed to make draggableV2 - Core or Core.Services is nil")
-        return
-    end
+    if not element or not LocalInfo.Core or not LocalInfo.Core.Services or not LocalInfo.Core.Services.UserInputService then return end
     local dragging, dragInput, dragStart, startPos = false, nil, nil, nil
     element.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -181,8 +173,7 @@ local function createCircleProgress(parent, pos, img, isCircle)
     local bgb = Instance.new("Frame")
     bgb.Size, bgb.Position, bgb.BackgroundColor3, bgb.BackgroundTransparency, bgb.BorderSizePixel = 
         UDim2.new(1, 0, 1, 0), UDim2.new(0, 0, 0, 0), Color3.fromRGB(5, 5, 5), 0.5, 0
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius, corner.Parent = isCircle and UDim.new(1, 0) or UDim.new(0, 10), bgb
+    Instance.new("UICorner", bgb).CornerRadius = isCircle and UDim.new(1, 0) or UDim.new(0, 10)
     bgb.Parent = bg
     bg.Parent = f
 
@@ -191,10 +182,10 @@ local function createCircleProgress(parent, pos, img, isCircle)
     local pb = Instance.new("Frame")
     pb.Size, pb.Position, pb.BackgroundTransparency, pb.BorderSizePixel = 
         UDim2.new(1, 0, 0, 0), UDim2.new(0, 0, 1, 0), 0, 0
-    local pbCorner = Instance.new("UICorner")
-    pbCorner.CornerRadius, pbCorner.Parent = isCircle and UDim.new(1, 0) or UDim.new(0, 10), pb
+    Instance.new("UICorner", pb).CornerRadius = isCircle and UDim.new(1, 0) or UDim.new(0, 10)
     local g = Instance.new("UIGradient")
-    g.Color, g.Rotation, g.Parent = LocalInfo.Config.GradientSettings.ColorSequence or ColorSequence.new(Color3.fromRGB(255, 255, 255)), 90, pb
+    g.Color, g.Rotation = ColorSequence.new(Color3.fromRGB(255, 255, 255)), 90
+    g.Parent = pb
     pb.Parent = pc
     pc.Parent = f
 
@@ -204,8 +195,7 @@ local function createCircleProgress(parent, pos, img, isCircle)
     else
         local ifr = Instance.new("Frame")
         ifr.Size, ifr.Position, ifr.BackgroundColor3, ifr.BackgroundTransparency, ifr.BorderSizePixel = UDim2.new(0, 25, 0, 25), UDim2.new(1, -16, 0, -8), Color3.fromRGB(5, 5, 5), 0.5, 0
-        local ifrCorner = Instance.new("UICorner")
-        ifrCorner.CornerRadius, ifrCorner.Parent = UDim.new(0.5, 0), ifr
+        Instance.new("UICorner", ifr).CornerRadius = UDim.new(0.5, 0)
         local i = Instance.new("ImageLabel")
         i.Size, i.Position, i.BackgroundTransparency, i.Image, i.Parent = UDim2.new(0, 18, 0, 18), UDim2.new(0.5, -9, 0.5, -9), 1, img, ifr
         ifr.Parent = f
@@ -215,133 +205,94 @@ local function createCircleProgress(parent, pos, img, isCircle)
     return f, pb, g
 end
 
-local function animateSmoothNumber(label, old, new, isMax)
-    if not label then return end
-    old = old or {current = 0, max = 0}
-    new = new or {current = 0, max = 0}
-    if not LocalInfo.Config.AnimateNumbers then 
-        label.Text = (isMax and "Hand: " or "Safe: ") .. new.current .. " / " .. new.max 
-        return 
+local function animateValue(label, old, new, prefix)
+    if not label or not LocalInfo.Config.AnimateNumbers then
+        label.Text = (prefix or "") .. new.current .. " / " .. new.max
+        return
     end
     local steps, stepDuration, currentStep = 10, LocalInfo.Config.AnimationDuration / 10, 0
     local startC, startM = old.current or 0, old.max or 0
     local deltaC, deltaM = (new.current - startC) / steps, (new.max - startM) / steps
-    local conn
-    if not LocalInfo.Core or not LocalInfo.Core.Services or not LocalInfo.Core.Services.RunService then
-        warn("LocalInfo: Failed to animate smooth number - Core or Core.Services is nil")
-        label.Text = (isMax and "Hand: " or "Safe: ") .. new.current .. " / " .. new.max 
-        return
-    end
-    conn = LocalInfo.Core.Services.RunService.Heartbeat:Connect(function()
+    local conn = LocalInfo.Core.Services.RunService.Heartbeat:Connect(function(dt)
         currentStep = currentStep + 1
-        label.Text = (isMax and "Hand: " or "Safe: ") .. math.floor(startC + deltaC * currentStep + 0.5) .. " / " .. math.floor(startM + deltaM * currentStep + 0.5)
-        if currentStep >= steps then 
-            conn:Disconnect() 
-            label.Text = (isMax and "Hand: " or "Safe: ") .. new.current .. " / " .. new.max 
+        label.Text = (prefix or "") .. math.floor(startC + deltaC * currentStep + 0.5) .. " / " .. math.floor(startM + deltaM * currentStep + 0.5)
+        if currentStep >= steps then
+            conn:Disconnect()
+            label.Text = (prefix or "") .. new.current .. " / " .. new.max
         end
     end)
 end
 
-local function animateProgressBar(bar, label, oldP, newP)
-    if not bar or not label then return end
-    oldP = oldP or 0
-    newP = newP or 0
-    if not LocalInfo.Config.AnimateNumbers then 
-        bar.Size, label.Text = UDim2.new(newP / 100, 0, 1, 0), math.floor(newP + 0.5) .. "%" 
-        return 
-    end
-    local steps, stepDuration, currentStep = 10, LocalInfo.Config.AnimationDuration / 10, 0
-    local startP, deltaP = oldP, (newP - oldP) / steps
-    local conn
-    if not LocalInfo.Core or not LocalInfo.Core.Services or not LocalInfo.Core.Services.RunService then
-        warn("LocalInfo: Failed to animate progress bar - Core or Core.Services is nil")
-        bar.Size, label.Text = UDim2.new(newP / 100, 0, 1, 0), math.floor(newP + 0.5) .. "%" 
+local function animateProgress(bar, label, oldP, newP)
+    if not bar or not label or not LocalInfo.Config.AnimateNumbers then
+        bar.Size = UDim2.new(newP / 100, 0, 1, 0)
+        label.Text = math.floor(newP + 0.5) .. "%"
         return
     end
-    conn = LocalInfo.Core.Services.RunService.Heartbeat:Connect(function()
+    local steps, currentStep = 10, 0
+    local startP, deltaP = oldP, (newP - oldP) / steps
+    local conn = LocalInfo.Core.Services.RunService.Heartbeat:Connect(function(dt)
         currentStep = currentStep + 1
         local ap = startP + deltaP * currentStep
-        bar.Size, label.Text = UDim2.new(ap / 100, 0, 1, 0), math.floor(ap + 0.5) .. "%"
-        if currentStep >= steps then 
-            conn:Disconnect() 
-            bar.Size, label.Text = UDim2.new(newP / 100, 0, 1, 0), math.floor(newP) .. "%" 
+        bar.Size = UDim2.new(ap / 100, 0, 1, 0)
+        label.Text = math.floor(ap + 0.5) .. "%"
+        if currentStep >= steps then
+            conn:Disconnect()
+            bar.Size = UDim2.new(newP / 100, 0, 1, 0)
+            label.Text = math.floor(newP) .. "%"
         end
     end)
 end
 
-local function animateCircleProgress(bar, oldP, newP)
-    if not bar then return end
-    oldP = oldP or 0
-    newP = newP or 0
-    if not LocalInfo.Config.AnimateNumbers then 
-        local fh = newP / 100 
-        bar.Size, bar.Position = UDim2.new(1, 0, fh, 0), UDim2.new(0, 0, 1 - fh, 0) 
-        return 
-    end
-    local steps, stepDuration, currentStep = 20, LocalInfo.Config.AnimationDuration / 20, 0
-    local startP, deltaP = oldP, (newP - oldP) / steps
-    local conn
-    if not LocalInfo.Core or not LocalInfo.Core.Services or not LocalInfo.Core.Services.RunService then
-        warn("LocalInfo: Failed to animate circle progress - Core or Core.Services is nil")
-        bar.Size, bar.Position = UDim2.new(1, 0, newP / 100, 0), UDim2.new(0, 0, 1 - (newP / 100), 0)
+local function animateCircle(bar, oldP, newP)
+    if not bar or not LocalInfo.Config.AnimateNumbers then
+        local fh = newP / 100
+        bar.Size, bar.Position = UDim2.new(1, 0, fh, 0), UDim2.new(0, 0, 1 - fh, 0)
         return
     end
-    conn = LocalInfo.Core.Services.RunService.Heartbeat:Connect(function()
+    local steps, currentStep = 20, 0
+    local startP, deltaP = oldP, (newP - oldP) / steps
+    local conn = LocalInfo.Core.Services.RunService.Heartbeat:Connect(function(dt)
         currentStep = currentStep + 1
         local ap = startP + deltaP * currentStep
         local fh = ap / 100
         bar.Size, bar.Position = UDim2.new(1, 0, fh, 0), UDim2.new(0, 0, 1 - fh, 0)
-        if currentStep >= steps then 
-            conn:Disconnect() 
+        if currentStep >= steps then
+            conn:Disconnect()
             bar.Size, bar.Position = UDim2.new(1, 0, newP / 100, 0), UDim2.new(0, 0, 1 - (newP / 100), 0)
         end
     end)
 end
 
-local function animateGradient(g, isH, id)
-    if not g or not LocalInfo.Config.GradientSettings.Enabled then 
-        if g then g.Enabled = false end
-        return 
-    end
-    g.Enabled = true
-    LocalInfo.GradientUpdateTimes[id] = 0
+local function updateGradients(dt)
+    if not LocalInfo.Config.GradientSettings.Enabled then return end
+    LocalInfo.GradientUpdateTime = LocalInfo.GradientUpdateTime + dt * LocalInfo.Config.GradientSettings.Speed
+    local offset = math.sin(LocalInfo.GradientUpdateTime)
+    if LocalInfo.HandGradientPercent then LocalInfo.HandGradientPercent.Offset = Vector2.new(offset, 0) end
+    if LocalInfo.SafeGradientPercent then LocalInfo.SafeGradientPercent.Offset = Vector2.new(offset, 0) end
+    if LocalInfo.HandGradientCircle then LocalInfo.HandGradientCircle.Offset = Vector2.new(0, offset) end
+    if LocalInfo.SafeGradientCircle then LocalInfo.SafeGradientCircle.Offset = Vector2.new(0, offset) end
 end
 
 local function updateAllGradients()
-    local changed = false
-    if LocalInfo.HandGradientPercent and LocalInfo.HandGradientPercent.Color ~= (LocalInfo.Config.GradientSettings.ColorSequence or ColorSequence.new(Color3.fromRGB(255, 255, 255))) then
-        LocalInfo.HandGradientPercent.Color = LocalInfo.Config.GradientSettings.ColorSequence or ColorSequence.new(Color3.fromRGB(255, 255, 255))
-        changed = true
-    end
-    if LocalInfo.SafeGradientPercent and LocalInfo.SafeGradientPercent.Color ~= (LocalInfo.Config.GradientSettings.ColorSequence or ColorSequence.new(Color3.fromRGB(255, 255, 255))) then
-        LocalInfo.SafeGradientPercent.Color = LocalInfo.Config.GradientSettings.ColorSequence or ColorSequence.new(Color3.fromRGB(255, 255, 255))
-        changed = true
-    end
-    if LocalInfo.HandGradientCircle and LocalInfo.HandGradientCircle.Color ~= (LocalInfo.Config.GradientSettings.ColorSequence or ColorSequence.new(Color3.fromRGB(255, 255, 255))) then
-        LocalInfo.HandGradientCircle.Color = LocalInfo.Config.GradientSettings.ColorSequence or ColorSequence.new(Color3.fromRGB(255, 255, 255))
-        changed = true
-    end
-    if LocalInfo.SafeGradientCircle and LocalInfo.SafeGradientCircle.Color ~= (LocalInfo.Config.GradientSettings.ColorSequence or ColorSequence.new(Color3.fromRGB(255, 255, 255))) then
-        LocalInfo.SafeGradientCircle.Color = LocalInfo.Config.GradientSettings.ColorSequence or ColorSequence.new(Color3.fromRGB(255, 255, 255))
-        changed = true
-    end
-    return changed
+    local color1 = LocalInfo.Core.GradientColors and LocalInfo.Core.GradientColors.Color1.Value or Color3.fromRGB(0, 0, 255)
+    local color2 = LocalInfo.Core.GradientColors and LocalInfo.Core.GradientColors.Color2.Value or Color3.fromRGB(147, 112, 219)
+    LocalInfo.Config.GradientSettings.ColorSequence = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, color1),
+        ColorSequenceKeypoint.new(0.5, color2),
+        ColorSequenceKeypoint.new(1, color1)
+    })
+    if LocalInfo.HandGradientPercent then LocalInfo.HandGradientPercent.Color = LocalInfo.Config.GradientSettings.ColorSequence end
+    if LocalInfo.SafeGradientPercent then LocalInfo.SafeGradientPercent.Color = LocalInfo.Config.GradientSettings.ColorSequence end
+    if LocalInfo.HandGradientCircle then LocalInfo.HandGradientCircle.Color = LocalInfo.Config.GradientSettings.ColorSequence end
+    if LocalInfo.SafeGradientCircle then LocalInfo.SafeGradientCircle.Color = LocalInfo.Config.GradientSettings.ColorSequence end
 end
 
 local function applyStyle()
     if not LocalInfo.Config.Enabled then
-        if LocalInfo.Frame then
-            savedFramePosition = LocalInfo.Frame.Position
-            LocalInfo.Frame:Destroy()
-        end
-        if LocalInfo.HandCircleFrame then
-            savedHandCirclePosition = LocalInfo.HandCircleFrame.Position
-            LocalInfo.HandCircleFrame:Destroy()
-        end
-        if LocalInfo.SafeCircleFrame then
-            savedSafeCirclePosition = LocalInfo.SafeCircleFrame.Position
-            LocalInfo.SafeCircleFrame:Destroy()
-        end
+        if LocalInfo.Frame then savedFramePosition = LocalInfo.Frame.Position; LocalInfo.Frame:Destroy() end
+        if LocalInfo.HandCircleFrame then savedHandCirclePosition = LocalInfo.HandCircleFrame.Position; LocalInfo.HandCircleFrame:Destroy() end
+        if LocalInfo.SafeCircleFrame then savedSafeCirclePosition = LocalInfo.SafeCircleFrame.Position; LocalInfo.SafeCircleFrame:Destroy() end
         LocalInfo.Frame, LocalInfo.HandCircleFrame, LocalInfo.SafeCircleFrame = nil, nil, nil
         LocalInfo.TitleLabel, LocalInfo.HandLabel, LocalInfo.SafeLabel = nil, nil, nil
         LocalInfo.HandIconFrame, LocalInfo.HandIcon, LocalInfo.SafeIconFrame, LocalInfo.SafeIcon = nil, nil, nil, nil
@@ -357,9 +308,9 @@ local function applyStyle()
     if not LocalInfo.Frame then
         LocalInfo.Frame = Instance.new("Frame")
         LocalInfo.Frame.BackgroundColor3, LocalInfo.Frame.BackgroundTransparency, LocalInfo.Frame.BorderSizePixel = Color3.fromRGB(20, 30, 50), 0.3, 0
-        local frameCorner = Instance.new("UICorner")
-        frameCorner.CornerRadius, frameCorner.Parent = UDim.new(0, 10), LocalInfo.Frame
-        LocalInfo.Frame.Position, LocalInfo.Frame.Parent = savedFramePosition, LocalInfo.ScreenGui
+        Instance.new("UICorner", LocalInfo.Frame).CornerRadius = UDim.new(0, 10)
+        LocalInfo.Frame.Position = savedFramePosition
+        LocalInfo.Frame.Parent = LocalInfo.ScreenGui
 
         LocalInfo.TitleLabel = Instance.new("TextLabel")
         LocalInfo.TitleLabel.Size, LocalInfo.TitleLabel.Position, LocalInfo.TitleLabel.BackgroundTransparency = UDim2.new(0, 200, 0, 30), UDim2.new(0, 10, 0, 10), 1
@@ -381,24 +332,16 @@ local function applyStyle()
 
         LocalInfo.HandIconFrame, LocalInfo.HandIcon = createIconFrame(UDim2.new(0, 10, 0, 10), "rbxassetid://12166530009")
         LocalInfo.SafeIconFrame, LocalInfo.SafeIcon = createIconFrame(UDim2.new(0, 10, 0, 35), "rbxassetid://17685282932")
-        LocalInfo.HandProgressFramePercent, LocalInfo.HandProgressBarPercent, LocalInfo.HandGradientPercent = createProgressBar(UDim2.new(0, 40, 0, 18))
-        LocalInfo.SafeProgressFramePercent, LocalInfo.SafeProgressBarPercent, LocalInfo.SafeGradientPercent = createProgressBar(UDim2.new(0, 40, 0, 43))
-        LocalInfo.HandProgressLabelFrame, LocalInfo.HandProgressLabelPercent = createProgressLabel(UDim2.new(0, LocalInfo.Config.PercentStyle.ProgressBarWidth + 50, 0, 14))
-        LocalInfo.SafeProgressLabelFrame, LocalInfo.SafeProgressLabelPercent = createProgressLabel(UDim2.new(0, LocalInfo.Config.PercentStyle.ProgressBarWidth + 50, 0, 39))
+        LocalInfo.HandProgressFramePercent, LocalInfo.HandProgressBarPercent, LocalInfo.HandGradientPercent = createProgressBar(UDim2.new(0, 40, 0, 18), 80, 10)
+        LocalInfo.SafeProgressFramePercent, LocalInfo.SafeProgressBarPercent, LocalInfo.SafeGradientPercent = createProgressBar(UDim2.new(0, 40, 0, 43), 80, 10)
+        LocalInfo.HandProgressLabelFrame, LocalInfo.HandProgressLabelPercent = createProgressLabel(UDim2.new(0, 130, 0, 14))
+        LocalInfo.SafeProgressLabelFrame, LocalInfo.SafeProgressLabelPercent = createProgressLabel(UDim2.new(0, 130, 0, 39))
     end
 
     local isCircleMode = LocalInfo.Config.UIStyleMode == "Circle" or LocalInfo.Config.UIStyleMode == "Rectangle"
     if isCircleMode then
-        if LocalInfo.HandCircleFrame then
-            savedHandCirclePosition = LocalInfo.HandCircleFrame.Position
-            LocalInfo.HandCircleFrame:Destroy()
-            LocalInfo.HandCircleFrame = nil
-        end
-        if LocalInfo.SafeCircleFrame then
-            savedSafeCirclePosition = LocalInfo.SafeCircleFrame.Position
-            LocalInfo.SafeCircleFrame:Destroy()
-            LocalInfo.SafeCircleFrame = nil
-        end
+        if LocalInfo.HandCircleFrame then savedHandCirclePosition = LocalInfo.HandCircleFrame.Position; LocalInfo.HandCircleFrame:Destroy() end
+        if LocalInfo.SafeCircleFrame then savedSafeCirclePosition = LocalInfo.SafeCircleFrame.Position; LocalInfo.SafeCircleFrame:Destroy() end
         
         if LocalInfo.Config.CircleStyle.ShowHand then
             LocalInfo.HandCircleFrame, LocalInfo.HandProgressBarCircle, LocalInfo.HandGradientCircle = createCircleProgress(LocalInfo.ScreenGui, savedHandCirclePosition, "rbxassetid://12166530009", LocalInfo.Config.UIStyleMode == "Circle")
@@ -429,9 +372,9 @@ local function applyStyle()
 
     if LocalInfo.Config.UIStyleMode == "Default" then
         LocalInfo.TitleLabel.Visible, LocalInfo.HandLabel.Visible, LocalInfo.SafeLabel.Visible, LocalInfo.Frame.Visible = true, true, true, true
-        LocalInfo.Frame.Size, LocalInfo.Frame.Position = UDim2.new(0, 220, 0, 120), savedFramePosition
+        LocalInfo.Frame.Size = UDim2.new(0, 220, 0, 120)
     elseif LocalInfo.Config.UIStyleMode == "Percent" then
-        local sh, ss, bw, bh = LocalInfo.Config.PercentStyle.ShowHand, LocalInfo.Config.PercentStyle.ShowSafe, LocalInfo.Config.PercentStyle.ProgressBarWidth, LocalInfo.Config.PercentStyle.ProgressBarHeight
+        local sh, ss = LocalInfo.Config.PercentStyle.ShowHand, LocalInfo.Config.PercentStyle.ShowSafe
         LocalInfo.HandIconFrame.Visible, LocalInfo.HandIcon.Visible = sh, sh
         LocalInfo.HandProgressFramePercent.Visible, LocalInfo.HandProgressBarPercent.Visible = sh, sh
         LocalInfo.HandProgressLabelFrame.Visible, LocalInfo.HandProgressLabelPercent.Visible = sh, sh
@@ -439,75 +382,38 @@ local function applyStyle()
         LocalInfo.SafeProgressFramePercent.Visible, LocalInfo.SafeProgressBarPercent.Visible = ss, ss
         LocalInfo.SafeProgressLabelFrame.Visible, LocalInfo.SafeProgressLabelPercent.Visible = ss, ss
         LocalInfo.Frame.Visible = true
-
-        -- Динамически обновляем размеры прогресс-баров
-        LocalInfo.HandProgressFramePercent.Size = UDim2.new(0, bw, 0, bh)
-        LocalInfo.SafeProgressFramePercent.Size = UDim2.new(0, bw, 0, bh)
-        LocalInfo.HandProgressLabelFrame.Position = UDim2.new(0, bw + 50, 0, 14)
-        LocalInfo.SafeProgressLabelFrame.Position = UDim2.new(0, bw + 50, 0, 39)
-        LocalInfo.Frame.Size = (sh and ss) and UDim2.new(0, bw + 100, 0, 70) or UDim2.new(0, bw + 100, 0, 40)
-        LocalInfo.Frame.Position = savedFramePosition
+        LocalInfo.Frame.Size = (sh and ss) and UDim2.new(0, 180, 0, 70) or UDim2.new(0, 180, 0, 40)
         if sh then
             LocalInfo.HandIconFrame.Position = UDim2.new(0, 10, 0, sh and ss and 10 or 10)
             LocalInfo.HandProgressFramePercent.Position = UDim2.new(0, 40, 0, sh and ss and 18 or 14)
-            LocalInfo.HandProgressLabelFrame.Position = UDim2.new(0, bw + 50, 0, sh and ss and 14 or 12)
-            animateGradient(LocalInfo.HandGradientPercent, true, "HandGradientPercent")
+            LocalInfo.HandProgressLabelFrame.Position = UDim2.new(0, 120, 0, sh and ss and 14 or 12)
         end
         if ss then
             LocalInfo.SafeIconFrame.Position = UDim2.new(0, 10, 0, sh and ss and 35 or 10)
             LocalInfo.SafeProgressFramePercent.Position = UDim2.new(0, 40, 0, sh and ss and 43 or 14)
-            LocalInfo.SafeProgressLabelFrame.Position = UDim2.new(0, bw + 50, 0, sh and ss and 39 or 12)
-            animateGradient(LocalInfo.SafeGradientPercent, true, "SafeGradientPercent")
+            LocalInfo.SafeProgressLabelFrame.Position = UDim2.new(0, 120, 0, sh and ss and 39 or 12)
         end
     elseif isCircleMode then
-        if LocalInfo.Config.CircleStyle.ShowHand and LocalInfo.HandCircleFrame then
-            LocalInfo.HandCircleFrame.Visible = true
-            animateGradient(LocalInfo.HandGradientCircle, false, "HandGradientCircle")
-        end
-        if LocalInfo.Config.CircleStyle.ShowSafe and LocalInfo.SafeCircleFrame then
-            LocalInfo.SafeCircleFrame.Visible = true
-            animateGradient(LocalInfo.SafeGradientCircle, false, "SafeGradientCircle")
-        end
+        if LocalInfo.Config.CircleStyle.ShowHand and LocalInfo.HandCircleFrame then LocalInfo.HandCircleFrame.Visible = true end
+        if LocalInfo.Config.CircleStyle.ShowSafe and LocalInfo.SafeCircleFrame then LocalInfo.SafeCircleFrame.Visible = true end
     end
     updateAllGradients()
+    makeDraggable(LocalInfo.Frame)
 end
 
 local function parseCapacity(text)
     if not text or type(text) ~= "string" then return 0, 0 end
     local current, max = text:match("(%d+)%s*/%s*(%d+)") or text:match("(%d+)%s*из%s*(%d+)")
-    if not current or not max then
-        local numbers = {}
-        for num in text:gmatch("%d+") do
-            table.insert(numbers, tonumber(num))
-        end
-        if #numbers >= 2 then
-            current, max = numbers[1], numbers[2]
-        else
-            current, max = 0, 0
-        end
-    end
     return tonumber(current) or 0, tonumber(max) or 0
 end
 
 local function updateCapacity()
-    if not LocalInfo.Config.Enabled then return end
+    if not LocalInfo.Config.Enabled or not LocalInfo.Core or not LocalInfo.Core.Services or not LocalInfo.Core.Services.ReplicatedStorage then return end
 
-    if not LocalInfo.Core or not LocalInfo.Core.Services or not LocalInfo.Core.Services.ReplicatedStorage then
-        warn("LocalInfo: Failed to update capacity - Core or Core.Services is nil")
-        return
-    end
-
-    local ui_module
-    local success, module = pcall(function() 
-        return require(LocalInfo.Core.Services.ReplicatedStorage:WaitForChild("Modules", 5):WaitForChild("Core", 5):WaitForChild("UI", 5)) 
-    end)
-    if success and module and type(module) == "table" and type(module.get) == "function" then
-        ui_module = module
-    else
+    local ui_module = require(LocalInfo.Core.Services.ReplicatedStorage:WaitForChild("Modules", 5):WaitForChild("Core", 5):WaitForChild("UI", 5))
+    if not ui_module or type(ui_module.get) ~= "function" then
         ui_module = { get = function(k) return k == "DefaultItemsMaxItems" and {Text = "5/10"} or k == "TransferSafeMaxItems" and {Text = "2/10"} or nil end }
-        if LocalInfo.Notify then
-            LocalInfo.Notify("Inventory Capacity", "Failed to load UI module, using default values", true)
-        end
+        if LocalInfo.Notify then LocalInfo.Notify("Inventory Capacity", "Failed to load UI module, using default values", true) end
     end
 
     local hl, sl = ui_module.get("DefaultItemsMaxItems"), ui_module.get("TransferSafeMaxItems")
@@ -515,107 +421,57 @@ local function updateCapacity()
         if LocalInfo.Config.UIStyleMode == "Default" then
             LocalInfo.HandLabel.Text, LocalInfo.SafeLabel.Text = "Hand: N/A", "Safe: N/A"
         elseif LocalInfo.Config.UIStyleMode == "Percent" then
-            LocalInfo.HandProgressLabelPercent.Text, LocalInfo.SafeProgressLabelPercent.Text = "N/A", "N/A"
-            LocalInfo.HandProgressBarPercent.Size, LocalInfo.SafeProgressBarPercent.Size = UDim2.new(0, 0, 1, 0), UDim2.new(0, 0, 1, 0)
-        elseif LocalInfo.Config.UIStyleMode == "Circle" or LocalInfo.Config.UIStyleMode == "Rectangle" then
-            if LocalInfo.HandProgressBarCircle then 
-                LocalInfo.HandProgressBarCircle.Size, LocalInfo.HandProgressBarCircle.Position = UDim2.new(1, 0, 0, 0), UDim2.new(0, 0, 1, 0) 
-            end
-            if LocalInfo.SafeProgressBarCircle then 
-                LocalInfo.SafeProgressBarCircle.Size, LocalInfo.SafeProgressBarCircle.Position = UDim2.new(1, 0, 0, 0), UDim2.new(0, 0, 1, 0) 
-            end
+            if LocalInfo.HandProgressBarPercent then LocalInfo.HandProgressBarPercent.Size = UDim2.new(0, 0, 1, 0); LocalInfo.HandProgressLabelPercent.Text = "N/A" end
+            if LocalInfo.SafeProgressBarPercent then LocalInfo.SafeProgressBarPercent.Size = UDim2.new(0, 0, 1, 0); LocalInfo.SafeProgressLabelPercent.Text = "N/A" end
+        elseif (LocalInfo.Config.UIStyleMode == "Circle" or LocalInfo.Config.UIStyleMode == "Rectangle") then
+            if LocalInfo.HandProgressBarCircle then LocalInfo.HandProgressBarCircle.Size, LocalInfo.HandProgressBarCircle.Position = UDim2.new(1, 0, 0, 0), UDim2.new(0, 0, 1, 0) end
+            if LocalInfo.SafeProgressBarCircle then LocalInfo.SafeProgressBarCircle.Size, LocalInfo.SafeProgressBarCircle.Position = UDim2.new(1, 0, 0, 0), UDim2.new(0, 0, 1, 0) end
         end
-        LocalInfo.CurrentHand = {current = 0, max = 0}
-        LocalInfo.CurrentSafe = {current = 0, max = 0}
+        LocalInfo.CurrentHand, LocalInfo.CurrentSafe = {current = 0, max = 0}, {current = 0, max = 0}
         return
     end
 
     local hc, hm = parseCapacity(hl.Text)
     if hc and hm then
         local nh = {current = hc, max = hm}
-        if LocalInfo.Config.UIStyleMode == "Default" and LocalInfo.HandLabel then
-            animateSmoothNumber(LocalInfo.HandLabel, LocalInfo.CurrentHand, nh, true)
-        end
-        if LocalInfo.Config.UIStyleMode == "Percent" and LocalInfo.Config.PercentStyle.ShowHand and LocalInfo.HandProgressBarPercent and LocalInfo.HandProgressLabelPercent then
+        if LocalInfo.Config.UIStyleMode == "Default" and LocalInfo.HandLabel then animateValue(LocalInfo.HandLabel, LocalInfo.CurrentHand, nh, "Hand: ") end
+        if LocalInfo.Config.UIStyleMode == "Percent" and LocalInfo.Config.PercentStyle.ShowHand then
             local np = hm > 0 and (hc / hm * 100) or 0
-            animateProgressBar(LocalInfo.HandProgressBarPercent, LocalInfo.HandProgressLabelPercent, LocalInfo.CurrentHandPercent, np)
+            animateProgress(LocalInfo.HandProgressBarPercent, LocalInfo.HandProgressLabelPercent, LocalInfo.CurrentHandPercent, np)
             LocalInfo.CurrentHandPercent = np
         end
-        if (LocalInfo.Config.UIStyleMode == "Circle" or LocalInfo.Config.UIStyleMode == "Rectangle") and LocalInfo.Config.CircleStyle.ShowHand and LocalInfo.HandProgressBarCircle then
+        if (LocalInfo.Config.UIStyleMode == "Circle" or LocalInfo.Config.UIStyleMode == "Rectangle") and LocalInfo.Config.CircleStyle.ShowHand then
             local np = hm > 0 and (hc / hm * 100) or 0
-            animateCircleProgress(LocalInfo.HandProgressBarCircle, LocalInfo.CurrentHandPercent, np)
+            animateCircle(LocalInfo.HandProgressBarCircle, LocalInfo.CurrentHandPercent, np)
             LocalInfo.CurrentHandPercent = np
         end
         LocalInfo.CurrentHand = nh
-    else
-        if LocalInfo.Config.UIStyleMode == "Default" then
-            LocalInfo.HandLabel.Text = "Hand: N/A"
-        elseif LocalInfo.Config.UIStyleMode == "Percent" and LocalInfo.Config.PercentStyle.ShowHand then
-            LocalInfo.HandProgressLabelPercent.Text, LocalInfo.HandProgressBarPercent.Size = "N/A", UDim2.new(0, 0, 1, 0)
-        elseif (LocalInfo.Config.UIStyleMode == "Circle" or LocalInfo.Config.UIStyleMode == "Rectangle") and LocalInfo.Config.CircleStyle.ShowHand and LocalInfo.HandProgressBarCircle then
-            LocalInfo.HandProgressBarCircle.Size, LocalInfo.HandProgressBarCircle.Position = UDim2.new(1, 0, 0, 0), UDim2.new(0, 0, 1, 0)
-        end
-        LocalInfo.CurrentHand = {current = 0, max = 0}
     end
 
     local sc, sm = parseCapacity(sl.Text)
     if sc and sm then
         local ns = {current = sc, max = sm}
-        if LocalInfo.Config.UIStyleMode == "Default" and LocalInfo.SafeLabel then
-            animateSmoothNumber(LocalInfo.SafeLabel, LocalInfo.CurrentSafe, ns, false)
-        end
-        if LocalInfo.Config.UIStyleMode == "Percent" and LocalInfo.Config.PercentStyle.ShowSafe and LocalInfo.SafeProgressLabelPercent and LocalInfo.SafeProgressBarPercent then
+        if LocalInfo.Config.UIStyleMode == "Default" and LocalInfo.SafeLabel then animateValue(LocalInfo.SafeLabel, LocalInfo.CurrentSafe, ns, "Safe: ") end
+        if LocalInfo.Config.UIStyleMode == "Percent" and LocalInfo.Config.PercentStyle.ShowSafe then
             local np = sm > 0 and (sc / sm * 100) or 0
-            animateProgressBar(LocalInfo.SafeProgressBarPercent, LocalInfo.SafeProgressLabelPercent, LocalInfo.CurrentSafePercent, np)
+            animateProgress(LocalInfo.SafeProgressBarPercent, LocalInfo.SafeProgressLabelPercent, LocalInfo.CurrentSafePercent, np)
             LocalInfo.CurrentSafePercent = np
         end
-        if (LocalInfo.Config.UIStyleMode == "Circle" or LocalInfo.Config.UIStyleMode == "Rectangle") and LocalInfo.Config.CircleStyle.ShowSafe and LocalInfo.SafeProgressBarCircle then
+        if (LocalInfo.Config.UIStyleMode == "Circle" or LocalInfo.Config.UIStyleMode == "Rectangle") and LocalInfo.Config.CircleStyle.ShowSafe then
             local np = sm > 0 and (sc / sm * 100) or 0
-            animateCircleProgress(LocalInfo.SafeProgressBarCircle, LocalInfo.CurrentSafePercent, np)
+            animateCircle(LocalInfo.SafeProgressBarCircle, LocalInfo.CurrentSafePercent, np)
             LocalInfo.CurrentSafePercent = np
         end
         LocalInfo.CurrentSafe = ns
-    else
-        if LocalInfo.Config.UIStyleMode == "Default" then
-            LocalInfo.SafeLabel.Text = "Safe: N/A"
-        elseif LocalInfo.Config.UIStyleMode == "Percent" and LocalInfo.Config.PercentStyle.ShowSafe then
-            LocalInfo.SafeProgressLabelPercent.Text, LocalInfo.SafeProgressBarPercent.Size = "N/A", UDim2.new(0, 0, 1, 0)
-        elseif (LocalInfo.Config.UIStyleMode == "Circle" or LocalInfo.Config.UIStyleMode == "Rectangle") and LocalInfo.Config.CircleStyle.ShowSafe and LocalInfo.SafeProgressBarCircle then
-            LocalInfo.SafeProgressBarCircle.Size, LocalInfo.SafeProgressBarCircle.Position = UDim2.new(1, 0, 0, 0), UDim2.new(0, 0, 1, 0)
-        end
-        LocalInfo.CurrentSafe = {current = 0, max = 0}
     end
-end
-
-local function updateGradientColors()
-    if not LocalInfo.Core or not LocalInfo.Core.GradientColors then
-        warn("LocalInfo: Failed to update gradient colors - Core or Core.GradientColors is nil")
-        return
-    end
-    local color1, color2 = LocalInfo.Core.GradientColors.Color1.Value, LocalInfo.Core.GradientColors.Color2.Value
-    LocalInfo.Config.GradientSettings.ColorSequence = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, color1),
-        ColorSequenceKeypoint.new(0.5, color2),
-        ColorSequenceKeypoint.new(1, color1)
-    })
-    updateAllGradients()
 end
 
 local function Init(UI, Core, notify)
-    if not Core then
-        warn("LocalInfo: Initialization failed - Core is nil")
-        return
-    end
-
+    if not Core then return end
     LocalInfo.Core, LocalInfo.Notify = Core, notify
-
-    updateGradientColors()
-    LocalInfo.LastGradientColors = {
-        Color1 = LocalInfo.Core.GradientColors and LocalInfo.Core.GradientColors.Color1 and LocalInfo.Core.GradientColors.Color1.Value or Color3.fromRGB(0, 0, 255),
-        Color2 = LocalInfo.Core.GradientColors and LocalInfo.Core.GradientColors.Color2 and LocalInfo.Core.GradientColors.Color2.Value or Color3.fromRGB(147, 112, 219)
-    }
-
+    LocalInfo.LastGradientColors = {Color1 = Core.GradientColors.Color1.Value, Color2 = Core.GradientColors.Color2.Value}
     setupGui(Core)
+    updateAllGradients()
 
     if LocalInfo.Config.CircleStyle.ShowHand then
         LocalInfo.HandCircleFrame, LocalInfo.HandProgressBarCircle, LocalInfo.HandGradientCircle = createCircleProgress(LocalInfo.ScreenGui, savedHandCirclePosition, "rbxassetid://12166530009", LocalInfo.Config.UIStyleMode == "Circle")
@@ -632,7 +488,6 @@ local function Init(UI, Core, notify)
         end
     end
 
-    -- Создание UI-элементов для Inventory Capacity
     if UI and UI.Sections and UI.Sections.InventoryCapacity then
         UI.Sections.InventoryCapacity:Header({ Name = "Inventory Capacity Settings" })
         local enabledToggle = UI.Sections.InventoryCapacity:Toggle({
@@ -641,17 +496,8 @@ local function Init(UI, Core, notify)
             Callback = function(value)
                 LocalInfo.Config.Enabled = value
                 applyStyle()
-                if value then
-                    updateCapacity()
-                    makeDraggable(LocalInfo.Frame)
-                    if LocalInfo.Config.CircleStyle.ShowHand and LocalInfo.HandCircleFrame then
-                        makeDraggableV2(LocalInfo.HandCircleFrame)
-                    end
-                    if LocalInfo.Config.CircleStyle.ShowSafe and LocalInfo.SafeCircleFrame then
-                        makeDraggableV2(LocalInfo.SafeCircleFrame)
-                    end
-                end
-                notify("Inventory Capacity", "Inventory Capacity " .. (value and "Enabled" or "Disabled"), true)
+                if value then makeDraggable(LocalInfo.Frame) end
+                if LocalInfo.Notify then LocalInfo.Notify("Inventory Capacity", "Inventory Capacity " .. (value and "Enabled" or "Disabled"), true) end
             end
         }, "LocalInfo_Enabled")
         local styleModeDropdown = UI.Sections.InventoryCapacity:Dropdown({
@@ -667,9 +513,7 @@ local function Init(UI, Core, notify)
         local animateNumbersToggle = UI.Sections.InventoryCapacity:Toggle({
             Name = "AnimateNumbers",
             Default = LocalInfo.Config.AnimateNumbers,
-            Callback = function(value)
-                LocalInfo.Config.AnimateNumbers = value
-            end
+            Callback = function(value) LocalInfo.Config.AnimateNumbers = value end
         }, "LocalInfo_AnimateNumbers")
         local animationDurationSlider = UI.Sections.InventoryCapacity:Slider({
             Name = "AnimationDuration",
@@ -677,11 +521,8 @@ local function Init(UI, Core, notify)
             Minimum = 0.1,
             Maximum = 2,
             Precision = 1,
-            Callback = function(value)
-                LocalInfo.Config.AnimationDuration = value
-            end
+            Callback = function(value) LocalInfo.Config.AnimationDuration = value end
         }, "LocalInfo_AnimationDuration")
-        -- PercentStyle settings
         local showHandToggle = UI.Sections.InventoryCapacity:Toggle({
             Name = "ShowHand",
             Default = LocalInfo.Config.PercentStyle.ShowHand,
@@ -724,7 +565,6 @@ local function Init(UI, Core, notify)
                 updateCapacity()
             end
         }, "LocalInfo_PercentStyle_ProgressBarHeight")
-        -- CircleStyle settings
         local showHandCircleToggle = UI.Sections.InventoryCapacity:Toggle({
             Name = "ShowHandCircle",
             Default = LocalInfo.Config.CircleStyle.ShowHand,
@@ -753,7 +593,6 @@ local function Init(UI, Core, notify)
                 updateCapacity()
             end
         }, "LocalInfo_CircleStyle_CircleIconStyle")
-        -- GradientSettings
         local gradientEnabledToggle = UI.Sections.InventoryCapacity:Toggle({
             Name = "GradientEnabled",
             Default = LocalInfo.Config.GradientSettings.Enabled,
@@ -768,12 +607,9 @@ local function Init(UI, Core, notify)
             Minimum = 0.1,
             Maximum = 5,
             Precision = 1,
-            Callback = function(value)
-                LocalInfo.Config.GradientSettings.Speed = value
-            end
+            Callback = function(value) LocalInfo.Config.GradientSettings.Speed = value end
         }, "LocalInfo_GradientSettings_Speed")
 
-        -- Сохраняем элементы в LocalInfo.Elements
         table.insert(LocalInfo.Elements, enabledToggle)
         table.insert(LocalInfo.Elements, styleModeDropdown)
         table.insert(LocalInfo.Elements, animateNumbersToggle)
@@ -788,7 +624,6 @@ local function Init(UI, Core, notify)
         table.insert(LocalInfo.Elements, gradientEnabledToggle)
         table.insert(LocalInfo.Elements, gradientSpeedSlider)
 
-        -- Передаём ссылки на функции в UI.Sections.InventoryCapacity
         UI.Sections.InventoryCapacity.applyStyle = applyStyle
         UI.Sections.InventoryCapacity.updateCapacity = updateCapacity
         UI.Sections.InventoryCapacity.makeDraggable = makeDraggable
@@ -796,44 +631,26 @@ local function Init(UI, Core, notify)
         UI.Sections.InventoryCapacity.Frame = LocalInfo.Frame
         UI.Sections.InventoryCapacity.HandCircleFrame = LocalInfo.HandCircleFrame
         UI.Sections.InventoryCapacity.SafeCircleFrame = LocalInfo.SafeCircleFrame
-    else
-        warn("LocalInfo: Failed to initialize UI - UI or UI.Sections is nil")
     end
 
     if LocalInfo.Core and LocalInfo.Core.Services and LocalInfo.Core.Services.RunService then
-        LocalInfo.Core.Services.RunService.Heartbeat:Connect(function(dt)
-            for id, t in pairs(LocalInfo.GradientUpdateTimes) do
-                local g = id:match("HandGradientPercent") and LocalInfo.HandGradientPercent or
-                         id:match("SafeGradientPercent") and LocalInfo.SafeGradientPercent or
-                         id:match("HandGradientCircle") and LocalInfo.HandGradientCircle or
-                         id:match("SafeGradientCircle") and LocalInfo.SafeGradientCircle
-                if g and g.Parent then
-                    t = t + dt * LocalInfo.Config.GradientSettings.Speed
-                    g.Offset = id:match("Percent") and Vector2.new(math.sin(t), 0) or Vector2.new(0, math.sin(t))
-                    LocalInfo.GradientUpdateTimes[id] = t
-                else
-                    LocalInfo.GradientUpdateTimes[id] = nil
-                end
-            end
-        end)
-    else
-        warn("LocalInfo: Failed to connect to RunService.Heartbeat for gradient updates - Core or Core.Services is nil")
-    end
+        LocalInfo.UIConnection = LocalInfo.Core.Services.RunService.Heartbeat:Connect(function(dt)
+            local currentTime = tick()
+            if not LocalInfo.Config.Enabled or currentTime - lastUpdate < UPDATE_INTERVAL then return end
+            lastUpdate = currentTime
 
-    if LocalInfo.Core and LocalInfo.Core.Services and LocalInfo.Core.Services.RunService then
-        LocalInfo.UIConnection = LocalInfo.Core.Services.RunService.Heartbeat:Connect(function()
-            if not LocalInfo.Config.Enabled then return end
             updateCapacity()
-            local color1, color2 = LocalInfo.Core.GradientColors and LocalInfo.Core.GradientColors.Color1 and LocalInfo.Core.GradientColors.Color1.Value or Color3.fromRGB(0, 0, 255),
-                                   LocalInfo.Core.GradientColors and LocalInfo.Core.GradientColors.Color2 and LocalInfo.Core.GradientColors.Color2.Value or Color3.fromRGB(147, 112, 219)
-            if LocalInfo.LastGradientColors.Color1.R ~= color1.R or LocalInfo.LastGradientColors.Color1.G ~= color1.G or LocalInfo.LastGradientColors.Color1.B ~= color1.B or
-               LocalInfo.LastGradientColors.Color2.R ~= color2.R or LocalInfo.LastGradientColors.Color2.G ~= color2.G or LocalInfo.LastGradientColors.Color2.B ~= color2.B then
+            local color1 = LocalInfo.Core.GradientColors.Color1.Value
+            local color2 = LocalInfo.Core.GradientColors.Color2.Value
+            if LocalInfo.LastGradientColors.Color1 ~= color1 or LocalInfo.LastGradientColors.Color2 ~= color2 then
                 LocalInfo.LastGradientColors.Color1, LocalInfo.LastGradientColors.Color2 = color1, color2
-                updateGradientColors()
+                updateAllGradients()
+            end
+            if currentTime - LocalInfo.GradientUpdateTime >= GRADIENT_INTERVAL then
+                updateGradients(dt)
+                LocalInfo.GradientUpdateTime = currentTime
             end
         end)
-    else
-        warn("LocalInfo: Failed to connect to RunService.Heartbeat for UI updates - Core or Core.Services is nil")
     end
 end
 
