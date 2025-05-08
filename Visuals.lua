@@ -12,7 +12,7 @@ function Visuals.Init(UI, Core, notify)
         showFPS = true,
         showTime = true,
         updateInterval = 0.5,
-        gradientUpdateInterval = 0.2 -- Увеличим интервал для снижения нагрузки
+        gradientUpdateInterval = 0.2
     }
 
     local ESP = {
@@ -40,7 +40,7 @@ function Visuals.Init(UI, Core, notify)
         GuiElements = {},
         LastNotificationTime = 0,
         NotificationDelay = 5,
-        UpdateInterval = 0.05 -- Добавим интервал обновления ESP (раз в 0.05 сек)
+        UpdateInterval = 0.05
     }
 
     local Cache = { TextBounds = {}, LastGradientUpdate = 0, PlayerCache = {} }
@@ -311,7 +311,6 @@ function Visuals.Init(UI, Core, notify)
         end
 
         updateSizes()
-        -- Оптимизация: обновляем размеры только при изменении текста
         elements.PlayerNameLabel:GetPropertyChangedSignal("TextBounds"):Connect(function()
             Cache.TextBounds.PlayerName = elements.PlayerNameLabel.TextBounds.X
             updateSizes()
@@ -431,6 +430,8 @@ function Visuals.Init(UI, Core, notify)
     local function createESP(player)
         if ESP.Elements[player] then return end
 
+        print("Creating ESP for player: " .. player.Name)
+
         local esp = {
             BoxLines = {
                 Top = Drawing.new("Line"),
@@ -515,6 +516,7 @@ function Visuals.Init(UI, Core, notify)
 
     local function updateESP()
         if not ESP.Settings.Enabled.Value then
+            print("ESP is disabled")
             for _, esp in pairs(ESP.Elements) do
                 for _, line in pairs(esp.BoxLines) do line.Visible = false end
                 esp.Filled.Visible = false
@@ -531,10 +533,11 @@ function Visuals.Init(UI, Core, notify)
         if currentTime - lastUpdate < ESP.UpdateInterval then return end
         lastUpdate = currentTime
 
+        print("Updating ESP at time: " .. currentTime)
+
         local camera = Core.PlayerData.Camera
         local playerCount = #Core.Services.Players:GetPlayers()
-        local dynamicInterval = ESP.UpdateInterval * math.max(1, playerCount / 10) -- Динамический интервал в зависимости от количества игроков
-        if currentTime - lastUpdate < dynamicInterval then return end
+        print("Player count: " .. playerCount)
 
         for _, player in pairs(Core.Services.Players:GetPlayers()) do
             if player == Core.PlayerData.LocalPlayer then continue end
@@ -547,13 +550,19 @@ function Visuals.Init(UI, Core, notify)
                 cache.Humanoid = character and character:FindFirstChild("Humanoid")
                 cache.Head = character and character:FindFirstChild("Head")
                 Cache.PlayerCache[player] = cache
+                print("Updated cache for player: " .. player.Name .. ", Character: " .. (character and "exists" or "nil"))
             end
 
             local rootPart, humanoid, head = cache.RootPart, cache.Humanoid, cache.Head
-            if not ESP.Elements[player] then createESP(player) end
+            if not ESP.Elements[player] then
+                createESP(player)
+            end
 
             local esp = ESP.Elements[player]
-            if not esp then continue end
+            if not esp then
+                print("ESP for player " .. player.Name .. " not found")
+                continue
+            end
 
             if rootPart and humanoid and humanoid.Health > 0 then
                 local rootPos, onScreen = camera:WorldToViewportPoint(rootPart.Position)
@@ -563,6 +572,8 @@ function Visuals.Init(UI, Core, notify)
                 local timeSinceLastUpdate = currentTime - esp.LastUpdateTime
                 local speed = esp.LastPosition and (rootPos - esp.LastPosition).Magnitude / timeSinceLastUpdate or 0
                 local shouldUpdate = positionChanged or healthChanged or visibilityChanged or speed > 50
+
+                print("Player: " .. player.Name .. ", onScreen: " .. tostring(onScreen) .. ", shouldUpdate: " .. tostring(shouldUpdate))
 
                 if not shouldUpdate and esp.LastVisible then continue end
 
@@ -744,13 +755,17 @@ function Visuals.Init(UI, Core, notify)
         end
     end
 
-    task.wait(1)
+    -- Убираем task.wait(1), чтобы инициализация происходила сразу
     for _, player in pairs(Core.Services.Players:GetPlayers()) do
-        if player ~= Core.PlayerData.LocalPlayer then createESP(player) end
+        if player ~= Core.PlayerData.LocalPlayer then
+            createESP(player)
+        end
     end
 
     Core.Services.Players.PlayerAdded:Connect(function(player)
-        if player ~= Core.PlayerData.LocalPlayer then createESP(player) end
+        if player ~= Core.PlayerData.LocalPlayer then
+            createESP(player)
+        end
     end)
 
     Core.Services.Players.PlayerRemoving:Connect(removeESP)
