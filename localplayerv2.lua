@@ -94,8 +94,7 @@ local TickSpeedStatus = {
     OnDuration = LocalPlayer.Config.TickSpeed.OnDuration,
     OffDuration = LocalPlayer.Config.TickSpeed.OffDuration,
     Timer = 0,
-    LastServerPosition = nil,
-    WallCheckDistance = 1.5
+    LastServerPosition = nil
 }
 local HighJumpStatus = {
     Enabled = LocalPlayer.Config.HighJump.Enabled,
@@ -128,18 +127,6 @@ end
 
 local function isUserInputFocused()
     return Services.UserInputService:GetFocusedTextBox() ~= nil
-end
-
-local function checkWallCollision(rootPart, moveDirection)
-    local raycastParams = RaycastParams.new()
-    raycastParams.FilterDescendantsInstances = {LocalPlayerObj.Character}
-    raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-    local raycastResult = Services.Workspace:Raycast(
-        rootPart.Position,
-        moveDirection.Unit * TickSpeedStatus.WallCheckDistance,
-        raycastParams
-    )
-    return raycastResult ~= nil
 end
 
 -- Timer Functions
@@ -362,10 +349,6 @@ TickSpeed.Start = function()
         if not humanoid or not rootPart then return end
 
         local moveDirection = humanoid.MoveDirection
-        if moveDirection.Magnitude > 0 and checkWallCollision(rootPart, moveDirection) then
-            return -- Отключаем TickSpeed при движении в стену
-        end
-
         TickSpeedStatus.Timer = (TickSpeedStatus.Timer + deltaTime) % (TickSpeedStatus.OnDuration + TickSpeedStatus.OffDuration)
         local currentMultiplier = TickSpeedStatus.Timer < TickSpeedStatus.OnDuration and TickSpeedStatus.HighSpeedMultiplier or TickSpeedStatus.NormalSpeedMultiplier
 
