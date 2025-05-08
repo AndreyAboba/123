@@ -616,27 +616,17 @@ local DEPTH_OFFSETS = {
 
 local function removeFolders()
     local playerFolder = Services.Workspace:FindFirstChild(LocalPlayerObj.Name)
-    if not playerFolder then
-        notify("Invisible", "Player folder not found in Workspace!", true)
-        return
-    end
+    if not playerFolder then return end
 
     local doubleRig = playerFolder:FindFirstChild("DoubleRig")
-    if doubleRig then
-        doubleRig:Destroy()
-        notify("Invisible", "DoubleRig folder removed", false)
-    end
+    if doubleRig then doubleRig:Destroy() end
 
     local constraints = playerFolder:FindFirstChild("Constraints")
-    if constraints then
-        constraints:Destroy()
-        notify("Invisible", "Constraints folder removed", false)
-    end
+    if constraints then constraints:Destroy() end
 
     playerFolder.ChildAdded:Connect(function(child)
         if child.Name == "DoubleRig" or child.Name == "Constraints" then
             child:Destroy()
-            notify("Invisible", "New " .. child.Name .. " folder removed", false)
         end
     end)
 end
@@ -764,17 +754,18 @@ Invisible.Toggle = function()
             InvisibleStatus.Connection = Services.RunService.PreSimulation:Connect(function(dt)
                 local humanoid, rootPart = getCharacterData()
                 if not isCharacterValid(humanoid, rootPart) or not InvisibleStatus.OldRoot then return end
-                if rootPart then
+                local root = LocalPlayerObj.Character.PrimaryPart or LocalPlayerObj.Character:FindFirstChild("HumanoidRootPart")
+                if root then
                     local depthOffset = DEPTH_OFFSETS[InvisibleStatus.Mode] or 0.9588
-                    local cf = rootPart.CFrame - Vector3.new(0, humanoid.HipHeight + (rootPart.Size.Y / 2) - 1 + depthOffset, 0)
+                    local cf = root.CFrame - Vector3.new(0, humanoid.HipHeight + (root.Size.Y / 2) - 1 + depthOffset, 0)
                     InvisibleStatus.OldRoot.CFrame = cf * CFrame.Angles(math.rad(180), 0, 0)
-                    InvisibleStatus.OldRoot.Velocity = rootPart.Velocity
+                    InvisibleStatus.OldRoot.Velocity = root.Velocity
                     InvisibleStatus.OldRoot.CanCollide = false
                 end
             end)
 
             InvisibleStatus.CharacterConnection = LocalPlayerObj.CharacterAdded:Connect(function(newChar)
-                task.wait(1)
+                wait(1)
                 local newHumanoid = newChar:WaitForChild("Humanoid", 1)
                 if newHumanoid and InvisibleStatus.Running then
                     InvisibleStatus.OldRoot = nil
@@ -1337,7 +1328,6 @@ function LocalPlayer.Init(UI, core, notifyFunc)
     end
 
     removeFolders()
-    notify("Invisible", "Initialized. Set a keybind to toggle invisibility.", true)
 end
 
 return LocalPlayer
