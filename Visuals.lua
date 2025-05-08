@@ -41,11 +41,21 @@ function Visuals.Init(UI, Core, notify)
         LastNotificationTime = 0,
         NotificationDelay = 5,
         CloseDistance = 50,
+        FarDistance = 100, -- Добавлено для более детального управления частотой
         NearFPS = 50,
-        FarFPS = 20
+        MidFPS = 30, -- Новая промежуточная частота
+        FarFPS = 15, -- Понижен для дальней дистанции
+        UpdateIntervals = {} -- Храним интервалы обновления для каждого игрока
     }
 
-    local Cache = { TextBounds = {}, LastGradientUpdate = 0, PlayerCache = {} }
+    local Cache = { 
+        TextBounds = {}, 
+        LastGradientUpdate = 0, 
+        PlayerCache = {}, 
+        CameraPosition = nil, -- Кэшируем позицию камеры
+        VisiblePlayers = {}, -- Кэш видимых игроков
+        LastUpdateTimes = {} -- Время последнего обновления для каждого игрока
+    }
     local Elements = { Watermark = {} }
 
     local buttonGui = Instance.new("ScreenGui")
@@ -486,6 +496,8 @@ function Visuals.Init(UI, Core, notify)
 
         ESP.Elements[player] = esp
         Cache.PlayerCache[player] = { Character = nil, RootPart = nil, Humanoid = nil, Head = nil, Height = 0 }
+        Cache.LastUpdateTimes[player] = 0
+        ESP.UpdateIntervals[player] = 1 / ESP.FarFPS -- Начальный интервал
     end
 
     local function removeESP(player)
@@ -501,6 +513,9 @@ function Visuals.Init(UI, Core, notify)
         end
         ESP.Elements[player] = nil
         Cache.PlayerCache[player] = nil
+        Cache.LastUpdateTimes[player] = nil
+        ESP.UpdateIntervals[player] = nil
+        Cache.VisiblePlayers[player] = nil
     end
 
     local function updateESP()
@@ -518,10 +533,6 @@ function Visuals.Init(UI, Core, notify)
         end
 
         local currentTime = tick()
-        local updateInterval = 1 / (currentTime - lastUpdate < ESP.CloseDistance and ESP.NearFPS or ESP.FarFPS)
-        if currentTime - lastUpdate < updateInterval then return end
-        lastUpdate = currentTime
-
         local camera = Core.PlayerData.Camera
         if not camera then return end
 
@@ -529,6 +540,12 @@ function Visuals.Init(UI, Core, notify)
         local localCharacter = localPlayer.Character
         local localRootPart = localCharacter and localCharacter:FindFirstChild("HumanoidRootPart")
         if not localRootPart then return end
+
+        -- Кэшируем позицию камеры
+        local cameraPos = camera.CFrame.Position
+        if Cache.CameraPosition ~= cameraPos then
+            Cache.CameraPosition = cameraPos
+        end
 
         for _, player in pairs(Core.Services.Players:GetPlayers()) do
             if player == localPlayer then continue end
@@ -551,35 +568,61 @@ function Visuals.Init(UI, Core, notify)
                 end
             end
 
-            local rootPart, humanoid, head = cache.RootPart, cache.Humanoid, cache.Head
+            local rootPart, humanoid = cache.RootPart, cache.Humanoid
             if not rootPart or not humanoid or humanoid.Health <= 0 then
-                for _, line in pairs(esp.BoxLines) do line.Visible = false end
-                esp.Filled.Visible = false
-                esp.HealthBar.Background.Visible = false
-                esp.HealthBar.Foreground.Visible = false
-                esp.NameDrawing.Visible = false
-                if esp.NameGui then esp.NameGui.Visible = false end
-                esp.LastVisible = false
+                if esp.LastVisible then
+                    for _, line in pairs(esp.BoxLines) do line.Visible = false end
+                    esp.Filled.Visible = false
+                    esp.HealthBar.Background.Visible = false
+                    esp.HealthBar.Foreground.Visible = false
+                    esp.NameDrawing.Visible = false
+                    if esp.NameGui then esp.NameGui.Visible = false end
+                    esp.LastVisible = false
+                    Cache.VisiblePlayers[player] = false
+                end
                 continue
             end
+
+            -- Вычисляем расстояние до игрока
+            local distance = (rootPart.Position - Cache.CameraPosition).Magnitude
+            -- Определяем частоту обновления на основе расстояния
+            local updateInterval
+            if distance < ESP.CloseDistance then
+                updateInterval = 1 / ESP.NearFPS
+            elseif distance < ESP.FarDistance then
+                updateInterval = 1 / ESP.MidFPS
+            else
+                updateInterval = 1 / ESP.FarFPS
+            end
+            ESP.UpdateIntervals[player] = updateInterval
+
+            -- Проверяем, нужно ли обновлять игрока
+            if currentTime - Cache.LastUpdateTimes[player] < updateInterval then
+                continue
+            end
+            Cache.LastUpdateTimes[player] = currentTime
 
             local rootPos, onScreen = camera:WorldToViewportPoint(rootPart.Position)
             if not onScreen then
-                for _, line in pairs(esp.BoxLines) do line.Visible = false end
-                esp.Filled.Visible = false
-                esp.HealthBar.Background.Visible = false
-                esp.HealthBar.Foreground.Visible = false
-                esp.NameDrawing.Visible = false
-                if esp.NameGui then esp.NameGui.Visible = false end
-                esp.LastVisible = false
+                if esp.LastVisible then
+                    for _, line in pairs(esp.BoxLines) do line.Visible = false end
+                    esp.Filled.Visible = false
+                    esp.HealthBar.Background.Visible = false
+                    esp.HealthBar.Foreground.Visible = false
+                    esp.NameDrawing.Visible = false
+                    if esp.NameGui then esp.NameGui.Visible = false end
+                    esp.LastVisible = false
+                    Cache.VisiblePlayers[player] = false
+                end
                 continue
             end
 
+            Cache.VisiblePlayers[player] = true
             esp.LastVisible = true
             esp.LastPosition = rootPos
             esp.LastHealth = humanoid.Health
 
-            local headPos = head and camera:WorldToViewportPoint(head.Position + Vector3.new(0, head.Size.Y / 2, 0)) or camera:WorldToViewportPoint(rootPart.Position + Vector3.new(0, cache.Height, 0))
+            local headPos = cache.Head and camera:WorldToViewportPoint(cache.Head.Position + Vector3.new(0, cache.Head.Size.Y / 2, 0)) or camera:WorldToViewportPoint(rootPart.Position + Vector3.new(0, cache.Height, 0))
             local feetPos = camera:WorldToViewportPoint(rootPart.Position - Vector3.new(0, cache.Height, 0))
 
             local height = math.abs(headPos.Y - feetPos.Y)
