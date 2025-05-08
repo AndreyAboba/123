@@ -608,21 +608,23 @@ end
 
 -- Invisible Functions
 local Invisible = {}
-local DEPTH_OFFSETS = {
-    Full = 0.9588,
-    Semi = 0.59,
-    Low = 0.1
-}
+local DEPTH_OFFSET = 0.9588 -- Дополнительное смещение вниз
 
 local function removeFolders()
     local playerFolder = Services.Workspace:FindFirstChild(LocalPlayerObj.Name)
-    if not playerFolder then return end
+    if not playerFolder then
+        return
+    end
 
     local doubleRig = playerFolder:FindFirstChild("DoubleRig")
-    if doubleRig then doubleRig:Destroy() end
+    if doubleRig then
+        doubleRig:Destroy()
+    end
 
     local constraints = playerFolder:FindFirstChild("Constraints")
-    if constraints then constraints:Destroy() end
+    if constraints then
+        constraints:Destroy()
+    end
 
     playerFolder.ChildAdded:Connect(function(child)
         if child.Name == "DoubleRig" or child.Name == "Constraints" then
@@ -631,96 +633,57 @@ local function removeFolders()
     end)
 end
 
-local function cleanupInvisibleState()
-    -- Очистка всех переменных состояния
-    if InvisibleStatus.AnimTrack then
-        InvisibleStatus.AnimTrack:Stop()
-        InvisibleStatus.AnimTrack:Destroy()
-        InvisibleStatus.AnimTrack = nil
-    end
-    if InvisibleStatus.Connection then
-        InvisibleStatus.Connection:Disconnect()
-        InvisibleStatus.Connection = nil
-    end
-    if InvisibleStatus.CharacterConnection then
-        InvisibleStatus.CharacterConnection:Disconnect()
-        InvisibleStatus.CharacterConnection = nil
-    end
-    if InvisibleStatus.Clone then
-        InvisibleStatus.Clone:Destroy()
-        InvisibleStatus.Clone = nil
-    end
-    InvisibleStatus.OldRoot = nil
-    InvisibleStatus.HipHeight = nil
-    InvisibleStatus.Running = false
-end
-
 local function doClone()
-    local humanoid, rootPart = getCharacterData()
-    if not isCharacterValid(humanoid, rootPart) then return false end
+    if LocalPlayerObj.Character and LocalPlayerObj.Character:FindFirstChild("Humanoid") and LocalPlayerObj.Character.Humanoid.Health > 0 then
+        InvisibleStatus.HipHeight = LocalPlayerObj.Character.Humanoid.HipHeight
+        InvisibleStatus.OldRoot = LocalPlayerObj.Character:FindFirstChild("HumanoidRootPart")
+        if not InvisibleStatus.OldRoot or not InvisibleStatus.OldRoot.Parent then
+            return false
+        end
 
-    -- Сохраняем HipHeight и текущий root
-    InvisibleStatus.HipHeight = humanoid.HipHeight
-    InvisibleStatus.OldRoot = rootPart
-    if not InvisibleStatus.OldRoot or not InvisibleStatus.OldRoot.Parent then
-        return false
-    end
+        local tempParent = Instance.new("Model")
+        tempParent.Parent = game
+        LocalPlayerObj.Character.Parent = tempParent
 
-    -- Создаём временный родительский объект
-    local tempParent = Instance.new("Model")
-    tempParent.Parent = Services.Workspace
-    LocalPlayerObj.Character.Parent = tempParent
+        InvisibleStatus.Clone = InvisibleStatus.OldRoot:Clone()
+        InvisibleStatus.Clone.Parent = LocalPlayerObj.Character
+        InvisibleStatus.OldRoot.Parent = Services.Workspace.CurrentCamera
+        InvisibleStatus.Clone.CFrame = InvisibleStatus.OldRoot.CFrame
 
-    -- Клонируем HumanoidRootPart
-    InvisibleStatus.Clone = InvisibleStatus.OldRoot:Clone()
-    InvisibleStatus.Clone.Parent = LocalPlayerObj.Character
-    InvisibleStatus.OldRoot.Parent = Services.Workspace.CurrentCamera
-    InvisibleStatus.Clone.CFrame = InvisibleStatus.OldRoot.CFrame
+        LocalPlayerObj.Character.PrimaryPart = InvisibleStatus.Clone
+        LocalPlayerObj.Character.Parent = Services.Workspace
 
-    -- Устанавливаем новый PrimaryPart
-    LocalPlayerObj.Character.PrimaryPart = InvisibleStatus.Clone
-    LocalPlayerObj.Character.Parent = Services.Workspace
-
-    -- Обновляем Welds и Motor6D
-    for _, v in pairs(LocalPlayerObj.Character:GetDescendants()) do
-        if v:IsA("Weld") or v:IsA("Motor6D") then
-            if v.Part0 == InvisibleStatus.OldRoot then
-                v.Part0 = InvisibleStatus.Clone
-            end
-            if v.Part1 == InvisibleStatus.OldRoot then
-                v.Part1 = InvisibleStatus.Clone
+        for _, v in pairs(LocalPlayerObj.Character:GetDescendants()) do
+            if v:IsA("Weld") or v:IsA("Motor6D") then
+                if v.Part0 == InvisibleStatus.OldRoot then
+                    v.Part0 = InvisibleStatus.Clone
+                end
+                if v.Part1 == InvisibleStatus.OldRoot then
+                    v.Part1 = InvisibleStatus.Clone
+                end
             end
         end
-    end
 
-    tempParent:Destroy()
-    return true
+        tempParent:Destroy()
+        return true
+    end
+    return false
 end
 
 local function revertClone()
-    -- Проверяем, что OldRoot всё ещё существует
-    if not InvisibleStatus.OldRoot or not InvisibleStatus.OldRoot:IsDescendantOf(Services.Workspace) then
-        cleanupInvisibleState()
-        return false
-    end
-    local humanoid, _ = getCharacterData()
-    if not humanoid or humanoid.Health <= 0 then
-        cleanupInvisibleState()
+    if not InvisibleStatus.OldRoot or not InvisibleStatus.OldRoot:IsDescendantOf(Services.Workspace) or not LocalPlayerObj.Character or LocalPlayerObj.Character.Humanoid.Health <= 0 then
         return false
     end
 
-    -- Создаём временный родительский объект
     local tempParent = Instance.new("Model")
-    tempParent.Parent = Services.Workspace
+    tempParent.Parent = game
     LocalPlayerObj.Character.Parent = tempParent
 
-    -- Восстанавливаем оригинальный HumanoidRootPart
     InvisibleStatus.OldRoot.Parent = LocalPlayerObj.Character
     LocalPlayerObj.Character.PrimaryPart = InvisibleStatus.OldRoot
     LocalPlayerObj.Character.Parent = Services.Workspace
-
-    -- Устанавливаем коллизию и восстанавливаем Welds/Motor6D
     InvisibleStatus.OldRoot.CanCollide = true
+
     for _, v in pairs(LocalPlayerObj.Character:GetDescendants()) do
         if v:IsA("Weld") or v:IsA("Motor6D") then
             if v.Part0 == InvisibleStatus.Clone then
@@ -732,7 +695,6 @@ local function revertClone()
         end
     end
 
-    -- Удаляем клон и сбрасываем позицию
     if InvisibleStatus.Clone then
         local oldPos = InvisibleStatus.Clone.CFrame
         InvisibleStatus.Clone:Destroy()
@@ -740,71 +702,62 @@ local function revertClone()
         InvisibleStatus.OldRoot.CFrame = oldPos
     end
 
-    -- Восстанавливаем HipHeight
-    if humanoid then
-        humanoid.HipHeight = InvisibleStatus.HipHeight or 2
-    end
-
-    -- Очищаем состояние
     InvisibleStatus.OldRoot = nil
-    InvisibleStatus.HipHeight = nil
+    if LocalPlayerObj.Character and LocalPlayerObj.Character.Humanoid then
+        LocalPlayerObj.Character.Humanoid.HipHeight = InvisibleStatus.HipHeight or 2
+    end
 end
 
 local function animationTrickery()
-    local humanoid, _ = getCharacterData()
-    if not isCharacterValid(humanoid, nil) then return end
-
-    local anim = Instance.new("Animation")
-    anim.AnimationId = "http://www.roblox.com/asset/?id=18537363391"
-    local animator = humanoid:FindFirstChild("Animator") or Instance.new("Animator", humanoid)
-    InvisibleStatus.AnimTrack = animator:LoadAnimation(anim)
-    InvisibleStatus.AnimTrack.Priority = Enum.AnimationPriority.Action4
-    InvisibleStatus.AnimTrack:Play(0, 1, 0)
-    anim:Destroy()
-
-    InvisibleStatus.AnimTrack.Stopped:Connect(function()
-        if InvisibleStatus.Running then
-            animationTrickery()
+    if LocalPlayerObj.Character and LocalPlayerObj.Character:FindFirstChild("Humanoid") and LocalPlayerObj.Character.Humanoid.Health > 0 then
+        local anim = Instance.new("Animation")
+        anim.AnimationId = "http://www.roblox.com/asset/?id=18537363391"
+        local humanoid = LocalPlayerObj.Character.Humanoid
+        local animator = humanoid:FindFirstChild("Animator")
+        if not animator then
+            animator = Instance.new("Animator", humanoid)
         end
-    end)
+        InvisibleStatus.AnimTrack = animator:LoadAnimation(anim)
+        InvisibleStatus.AnimTrack.Priority = Enum.AnimationPriority.Action4
+        InvisibleStatus.AnimTrack:Play(0, 1, 0)
+        anim:Destroy()
 
-    task.delay(0, function()
-        InvisibleStatus.AnimTrack.TimePosition = 0.77
-        task.delay(1, function()
-            InvisibleStatus.AnimTrack:AdjustSpeed(math.huge)
+        InvisibleStatus.AnimTrack.Stopped:Connect(function()
+            if InvisibleStatus.Running then
+                animationTrickery()
+            end
         end)
-    end)
+
+        task.delay(0, function()
+            InvisibleStatus.AnimTrack.TimePosition = 0.77
+            task.delay(1, function()
+                InvisibleStatus.AnimTrack:AdjustSpeed(math.huge)
+            end)
+        end)
+    end
 end
 
 Invisible.Toggle = function()
-    if not LocalPlayerObj.Character then
-        notify("Invisible", "Character not found!", true)
-        return
-    end
-    local humanoid, rootPart = getCharacterData()
-    if not isCharacterValid(humanoid, rootPart) then
+    if not LocalPlayerObj.Character or LocalPlayerObj.Character.Humanoid.Health <= 0 then
         notify("Invisible", "Character is not valid!", true)
         return
     end
 
     InvisibleStatus.Running = not InvisibleStatus.Running
     if InvisibleStatus.Running then
-        -- Убедимся, что состояние чистое перед включением
-        cleanupInvisibleState()
         removeFolders()
         local success = doClone()
         if success then
             animationTrickery()
             InvisibleStatus.Connection = Services.RunService.PreSimulation:Connect(function(dt)
-                local humanoid, rootPart = getCharacterData()
-                if not isCharacterValid(humanoid, rootPart) or not InvisibleStatus.OldRoot then return end
-                local root = LocalPlayerObj.Character.PrimaryPart or LocalPlayerObj.Character:FindFirstChild("HumanoidRootPart")
-                if root then
-                    local depthOffset = DEPTH_OFFSETS[InvisibleStatus.Mode] or 0.9588
-                    local cf = root.CFrame - Vector3.new(0, humanoid.HipHeight + (root.Size.Y / 2) - 1 + depthOffset, 0)
-                    InvisibleStatus.OldRoot.CFrame = cf * CFrame.Angles(math.rad(180), 0, 0)
-                    InvisibleStatus.OldRoot.Velocity = root.Velocity
-                    InvisibleStatus.OldRoot.CanCollide = false
+                if LocalPlayerObj.Character and LocalPlayerObj.Character:FindFirstChild("Humanoid") and LocalPlayerObj.Character.Humanoid.Health > 0 and InvisibleStatus.OldRoot then
+                    local root = LocalPlayerObj.Character.PrimaryPart or LocalPlayerObj.Character:FindFirstChild("HumanoidRootPart")
+                    if root then
+                        local cf = root.CFrame - Vector3.new(0, LocalPlayerObj.Character.Humanoid.HipHeight + (root.Size.Y / 2) - 1 + DEPTH_OFFSET, 0)
+                        InvisibleStatus.OldRoot.CFrame = cf * CFrame.Angles(math.rad(180), 0, 0)
+                        InvisibleStatus.OldRoot.Velocity = root.Velocity
+                        InvisibleStatus.OldRoot.CanCollide = false
+                    end
                 end
             end)
 
@@ -812,29 +765,41 @@ Invisible.Toggle = function()
                 wait(1)
                 local newHumanoid = newChar:WaitForChild("Humanoid", 1)
                 if newHumanoid and InvisibleStatus.Running then
-                    cleanupInvisibleState()
+                    InvisibleStatus.OldRoot = nil
+                    if InvisibleStatus.AnimTrack then
+                        InvisibleStatus.AnimTrack:Stop()
+                        InvisibleStatus.AnimTrack:Destroy()
+                        InvisibleStatus.AnimTrack = nil
+                    end
+                    if InvisibleStatus.Connection then InvisibleStatus.Connection:Disconnect() end
+                    revertClone()
                     removeFolders()
                     Invisible.Toggle()
                 end
             end)
 
-            notify("Invisible", "Enabled with mode: " .. InvisibleStatus.Mode .. " (Depth: " .. DEPTH_OFFSETS[InvisibleStatus.Mode] .. ")", true)
+            notify("Invisible", "Enabled with depth offset: " .. DEPTH_OFFSET, true)
         else
             InvisibleStatus.Running = false
             notify("Invisible", "Failed to enable invisibility!", true)
         end
     else
-        cleanupInvisibleState()
+        if InvisibleStatus.AnimTrack then
+            InvisibleStatus.AnimTrack:Stop()
+            InvisibleStatus.AnimTrack:Destroy()
+            InvisibleStatus.AnimTrack = nil
+        end
+        if InvisibleStatus.Connection then InvisibleStatus.Connection:Disconnect() end
+        if InvisibleStatus.CharacterConnection then InvisibleStatus.CharacterConnection:Disconnect() end
         revertClone()
         removeFolders()
         notify("Invisible", "Disabled", true)
     end
 end
 
+-- Удаляем SetMode, так как он не используется в оригинальном скрипте
 Invisible.SetMode = function(newMode)
-    InvisibleStatus.Mode = newMode
-    LocalPlayer.Config.Invisible.Mode = newMode
-    notify("Invisible", "Mode set to: " .. newMode, false)
+    notify("Invisible", "Mode setting is not supported in this version.", true)
 end
 
 -- Настройка UI
@@ -1164,14 +1129,7 @@ local function SetupUI(UI)
                 end
             end
         }, "InvisibleEnabled")
-        uiElements.InvisibleMode = UI.Sections.Invisible:Dropdown({
-            Name = "Mode",
-            Options = {"Full", "Semi", "Low"},
-            Default = LocalPlayer.Config.Invisible.Mode,
-            Callback = function(value)
-                Invisible.SetMode(value)
-            end
-        }, "InvisibleMode")
+        -- Удаляем Dropdown для Mode, так как он не используется
         uiElements.InvisibleKey = UI.Sections.Invisible:Keybind({
             Name = "Toggle Key",
             Default = LocalPlayer.Config.Invisible.ToggleKey,
@@ -1239,13 +1197,6 @@ local function SetupUI(UI)
             LocalPlayer.Config.FastAttack.Enabled = uiElements.FastAttackEnabled:GetState()
 
             LocalPlayer.Config.Invisible.Enabled = uiElements.InvisibleEnabled:GetState()
-            local invisibleModeOptions = uiElements.InvisibleMode:GetOptions()
-            for option, selected in pairs(invisibleModeOptions) do
-                if selected then
-                    LocalPlayer.Config.Invisible.Mode = option
-                    break
-                end
-            end
             LocalPlayer.Config.Invisible.ToggleKey = uiElements.InvisibleKey:GetBind()
 
             TimerStatus.Enabled = LocalPlayer.Config.Timer.Enabled
@@ -1315,7 +1266,6 @@ local function SetupUI(UI)
             end
 
             InvisibleStatus.Enabled = LocalPlayer.Config.Invisible.Enabled
-            InvisibleStatus.Mode = LocalPlayer.Config.Invisible.Mode
             InvisibleStatus.Key = LocalPlayer.Config.Invisible.ToggleKey
             if InvisibleStatus.Enabled then
                 if not InvisibleStatus.Running then Invisible.Toggle() end
