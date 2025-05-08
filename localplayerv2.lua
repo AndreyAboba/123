@@ -43,7 +43,7 @@ LocalPlayer.Config = {
         Method = "Velocity",
         JumpPower = 100,
         JumpKey = nil,
-        DefaultJumpHeight = 7.5 -- Стандартная высота прыжка в Roblox (примерное значение)
+        DefaultJumpHeight = 7.5
     },
     NoRagdoll = {
         Enabled = false
@@ -83,7 +83,8 @@ local TickSpeedStatus = {
     OnDuration = LocalPlayer.Config.TickSpeed.OnDuration,
     OffDuration = LocalPlayer.Config.TickSpeed.OffDuration,
     Timer = 0,
-    LastServerPosition = nil
+    LastServerPosition = nil,
+    WallCheckDistance = 1.5
 }
 local HighJumpStatus = {
     Enabled = LocalPlayer.Config.HighJump.Enabled,
@@ -101,7 +102,6 @@ local NoRagdollStatus = {
 local FastAttackStatus = {
     Enabled = LocalPlayer.Config.FastAttack.Enabled,
     Connection = nil,
-    AttackSpeed = 0,
     LastCheckTime = 0,
     CheckInterval = 0.1
 }
@@ -115,9 +115,20 @@ local function getCharacterData()
     return humanoid, rootPart
 end
 
--- Проверка, активно ли UI (например, чат)
 local function isUserInputFocused()
     return Services.UserInputService:GetFocusedTextBox() ~= nil
+end
+
+local function checkWallCollision(rootPart, moveDirection)
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterDescendantsInstances = {LocalPlayerObj.Character}
+    raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+    local raycastResult = Services.Workspace:Raycast(
+        rootPart.Position,
+        moveDirection.Unit * TickSpeedStatus.WallCheckDistance,
+        raycastParams
+    )
+    return raycastResult ~= nil
 end
 
 -- TickSpeed Functions
@@ -127,7 +138,6 @@ TickSpeed.Start = function()
     local _, rootPart = getCharacterData()
     if not rootPart then return end
 
-    -- Устанавливаем приоритет клиента
     local success, err = pcall(function()
         setsimulationradius(10000)
     end)
@@ -145,37 +155,29 @@ TickSpeed.Start = function()
         local humanoid, rootPart = getCharacterData()
         if not humanoid or not rootPart then return end
 
-        -- Обновляем таймер
-        local cycleTime = TickSpeedStatus.OnDuration + TickSpeedStatus.OffDuration
-        TickSpeedStatus.Timer = (TickSpeedStatus.Timer + deltaTime) % cycleTime
-
-        -- Определяем текущий множитель скорости
-        local currentMultiplier = (TickSpeedStatus.Timer < TickSpeedStatus.OnDuration) and TickSpeedStatus.HighSpeedMultiplier or TickSpeedStatus.NormalSpeedMultiplier
-
-        -- Получаем направление движения
         local moveDirection = humanoid.MoveDirection
+        if moveDirection.Magnitude > 0 and checkWallCollision(rootPart, moveDirection) then
+            return -- Отключаем TickSpeed при движении в стену
+        end
+
+        TickSpeedStatus.Timer = (TickSpeedStatus.Timer + deltaTime) % (TickSpeedStatus.OnDuration + TickSpeedStatus.OffDuration)
+        local currentMultiplier = TickSpeedStatus.Timer < TickSpeedStatus.OnDeviation ? TickSpeedStatus.HighSpeedMultiplier : TickSpeedStatus.NormalSpeedMultiplier
+
         if moveDirection.Magnitude > 0 then
             moveDirection = moveDirection.Unit
-
-            -- Вычисляем смещение
-            local speed = 16 * currentMultiplier -- 16 — стандартная скорость
+            local speed = 16 * currentMultiplier
             local offset = moveDirection * speed * deltaTime
+            local newCFrame = rootPart.CFrame + offset
+            rootPart.CFrame = CFrame.new(newCFrame.Position, newCFrame.Position + moveDirection)
 
-            -- Применяем новую позицию
-            local currentCFrame = rootPart.CFrame
-            rootPart.CFrame = currentCFrame + offset
-
-            -- Ограничиваем отклонение от серверной позиции
-            local currentPos = rootPart.Position
-            local deviation = (currentPos - TickSpeedStatus.LastServerPosition).Magnitude
+            local deviation = (rootPart.Position - TickSpeedStatus.LastServerPosition).Magnitude
             if deviation > 5 then
-                local correction = (currentPos - TickSpeedStatus.LastServerPosition).Unit * (deviation - 5)
-                rootPart.CFrame = CFrame.new(currentPos - correction)
+                local correction = (rootPart.Position - TickSpeedStatus.LastServerPosition).Unit * (deviation - 5)
+                rootPart.CFrame = CFrame.new(rootPart.Position - correction)
             end
         end
     end)
 
-    -- Отслеживание сброса позиции сервером
     TickSpeedStatus.ServerConnection = Services.RunService.Stepped:Connect(function()
         local _, rootPart = getCharacterData()
         if not rootPart then return end
@@ -249,10 +251,9 @@ FastAttack.Start = function()
 
         for _, item in ipairs(backpack:GetChildren()) do
             if item.Name == "fists" or item:GetAttribute("Speed") then
-                local success = pcall(function()
-                    item:SetAttribute("Speed", FastAttackStatus.AttackSpeed)
+                pcall(function()
+                    item:SetAttribute("Speed", 0) -- Убрал динамическую AttackSpeed для стабильности
                 end)
-                if not success then warn("FastAttack: Failed to set Speed for " .. item.Name) end
             end
         end
     end)
@@ -489,7 +490,6 @@ HighJump.Trigger = function()
         notify("HighJump", humanoid:GetState() ~= Enum.HumanoidStateType.Running and "You must be on the ground to high jump!" or "HighJump is on cooldown!", true)
         return
     end
-    -- Устанавливаем JumpHeight только на момент прыжка
     humanoid.JumpHeight = HighJumpStatus.JumpPower
     humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
     if HighJumpStatus.Method == "Velocity" then
@@ -501,7 +501,6 @@ HighJump.Trigger = function()
         rootPart.CFrame = newCFrame
     end
     HighJumpStatus.LastJumpTime = currentTime
-    -- Сразу восстанавливаем стандартную высоту прыжка
     humanoid.JumpHeight = LocalPlayer.Config.HighJump.DefaultJumpHeight
     notify("HighJump", "Performed HighJump with method: " .. HighJumpStatus.Method, true)
 end
@@ -551,30 +550,17 @@ NoRagdoll.Start = function(character)
 
     local function updatePhysics()
         local p = NoRagdollStatus.BodyParts
-        if p.LowerTorso:FindFirstChild("MoveForce") then
-            p.LowerTorso.MoveForce.Enabled = false
-        end
-        if p.UpperTorso:FindFirstChild("FloatPosition") then
-            p.UpperTorso.FloatPosition.Enabled = false
-        end
-        if p.LeftFoot:FindFirstChild("LeftFootPosition") then
-            p.LeftFoot.LeftFootPosition.Enabled = false
-        end
-        if p.RightFoot:FindFirstChild("RightFootPosition") then
-            p.RightFoot.RightFootPosition.Enabled = false
-        end
+        if p.LowerTorso:FindFirstChild("MoveForce") then p.LowerTorso.MoveForce.Enabled = false end
+        if p.UpperTorso:FindFirstChild("FloatPosition") then p.UpperTorso.FloatPosition.Enabled = false end
+        if p.LeftFoot:FindFirstChild("LeftFootPosition") then p.LeftFoot.LeftFootPosition.Enabled = false end
+        if p.RightFoot:FindFirstChild("RightFootPosition") then p.RightFoot.RightFootPosition.Enabled = false end
         for _, motor in ipairs(character:GetDescendants()) do
-            if motor:IsA("Motor6D") then
-                motor.Enabled = true
-            end
+            if motor:IsA("Motor6D") then motor.Enabled = true end
         end
     end
 
     updatePhysics()
-    NoRagdollStatus.Connection = Services.RunService.Heartbeat:Connect(function()
-        if not NoRagdollStatus.Enabled then return end
-        updatePhysics()
-    end)
+    NoRagdollStatus.Connection = Services.RunService.Heartbeat:Connect(updatePhysics)
 
     notify("NoRagdoll", "Started", true)
 end
@@ -590,10 +576,8 @@ end
 
 -- Настройка UI
 local function SetupUI(UI)
-    -- Таблица для хранения UI-элементов
     local uiElements = {}
 
-    -- Timer UI
     if UI.Sections.Timer then
         UI.Sections.Timer:Header({ Name = "Timer" })
         uiElements.TimerEnabled = UI.Sections.Timer:Toggle({
@@ -632,7 +616,6 @@ local function SetupUI(UI)
         }, "TimerKey")
     end
 
-    -- Disabler UI
     if UI.Sections.Disabler then
         UI.Sections.Disabler:Header({ Name = "Disabler" })
         uiElements.DisablerEnabled = UI.Sections.Disabler:Toggle({
@@ -660,7 +643,6 @@ local function SetupUI(UI)
         }, "DisablerKey")
     end
 
-    -- Speed UI
     if UI.Sections.Speed then
         UI.Sections.Speed:Header({ Name = "Speed" })
         uiElements.SpeedEnabled = UI.Sections.Speed:Toggle({
@@ -770,7 +752,6 @@ local function SetupUI(UI)
         }, "SpeedKey")
     end
 
-    -- TickSpeed UI
     if UI.Sections.TickSpeed then
         UI.Sections.TickSpeed:Header({ Name = "TickSpeed" })
         uiElements.TickSpeedEnabled = UI.Sections.TickSpeed:Toggle({
@@ -842,7 +823,6 @@ local function SetupUI(UI)
         }, "TickSpeedKey")
     end
 
-    -- HighJump UI
     if UI.Sections.HighJump then
         UI.Sections.HighJump:Header({ Name = "HighJump" })
         uiElements.HighJumpEnabled = UI.Sections.HighJump:Toggle({
@@ -889,7 +869,6 @@ local function SetupUI(UI)
         }, "HighJumpKey")
     end
 
-    -- NoRagdoll UI
     if UI.Sections.NoRagdoll then
         UI.Sections.NoRagdoll:Header({ Name = "NoRagdoll" })
         uiElements.NoRagdollEnabled = UI.Sections.NoRagdoll:Toggle({
@@ -903,7 +882,6 @@ local function SetupUI(UI)
         }, "NoRagdollEnabled")
     end
 
-    -- FastAttack UI
     if UI.Sections.FastAttack then
         UI.Sections.FastAttack:Header({ Name = "FastAttack" })
         uiElements.FastAttackEnabled = UI.Sections.FastAttack:Toggle({
@@ -917,13 +895,11 @@ local function SetupUI(UI)
         }, "FastAttackEnabled")
     end
 
-    -- LocalPlayer Sync UI
     local localconfigSection = UI.Tabs.Config:Section({ Name = "Local Player Sync", Side = "Right" })
     localconfigSection:Header({ Name = "LocalPlayer Settings Sync" })
     localconfigSection:Button({
         Name = "Sync Config",
         Callback = function()
-            -- Обновляем LocalPlayer.Config на основе текущих значений UI
             LocalPlayer.Config.Timer.Enabled = uiElements.TimerEnabled:GetState()
             LocalPlayer.Config.Timer.Speed = uiElements.TimerSpeed:GetValue()
             LocalPlayer.Config.Timer.ToggleKey = uiElements.TimerKey:GetBind()
@@ -970,7 +946,6 @@ local function SetupUI(UI)
 
             LocalPlayer.Config.FastAttack.Enabled = uiElements.FastAttackEnabled:GetState()
 
-            -- Синхронизируем внутренние состояния с обновлённым LocalPlayer.Config
             TimerStatus.Enabled = LocalPlayer.Config.Timer.Enabled
             TimerStatus.Speed = LocalPlayer.Config.Timer.Speed
             TimerStatus.Key = LocalPlayer.Config.Timer.ToggleKey
@@ -1043,7 +1018,6 @@ local function SetupUI(UI)
     })
 end
 
--- Инициализация модуля
 function LocalPlayer.Init(UI, core, notifyFunc)
     Services = core.Services
     PlayerData = core.PlayerData
@@ -1067,7 +1041,6 @@ function LocalPlayer.Init(UI, core, notifyFunc)
 
     SetupUI(UI)
 
-    -- Восстанавливаем JumpHeight при инициализации, если HighJump выключен
     if not HighJumpStatus.Enabled then
         HighJump.RestoreJumpHeight()
     end
