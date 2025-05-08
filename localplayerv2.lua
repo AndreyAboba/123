@@ -435,25 +435,35 @@ HighJump.Trigger = function()
         notify("HighJump", "HighJump is disabled. Enable it to use keybind.", true)
         return
     end
+
     local humanoid, rootPart = getCharacterData()
-    if not isCharacterValid(humanoid, rootPart) then return end
-    local currentTime = tick()
-    if humanoid:GetState() ~= Enum.HumanoidStateType.Running or currentTime - HighJumpStatus.LastJumpTime < HighJumpStatus.JumpCooldown then
-        notify("HighJump", humanoid:GetState() ~= Enum.HumanoidStateType.Running and "You must be on the ground to high jump!" or "HighJump is on cooldown!", true)
+    if not isCharacterValid(humanoid, rootPart) then
+        notify("HighJump", "Character is not valid.", true)
         return
     end
-    humanoid.JumpHeight = HighJumpStatus.JumpPower
-    humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+
+    local currentTime = tick()
+    local state = humanoid:GetState()
+    local canJump = state == Enum.HumanoidStateType.Running or state == Enum.HumanoidStateType.Landed
+    if not canJump or currentTime - HighJumpStatus.LastJumpTime < HighJumpStatus.JumpCooldown then
+        notify("HighJump", not canJump and "You must be on the ground to high jump! State: " .. tostring(state) or "HighJump is on cooldown!", true)
+        return
+    end
+
+    -- Попытка прыжка
+    notify("HighJump", "Attempting jump with method: " .. HighJumpStatus.Method, true)
     if HighJumpStatus.Method == "Velocity" then
         local gravity = Services.Workspace.Gravity or 196.2
         local jumpVelocity = math.sqrt(2 * HighJumpStatus.JumpPower * gravity)
         rootPart.Velocity = Vector3.new(rootPart.Velocity.X, jumpVelocity, rootPart.Velocity.Z)
-    else
+        humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+    else -- CFrame method
         local newCFrame = rootPart.CFrame + Vector3.new(0, HighJumpStatus.JumpPower / 10, 0)
         rootPart.CFrame = newCFrame
+        humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
     end
+
     HighJumpStatus.LastJumpTime = currentTime
-    humanoid.JumpHeight = LocalPlayer.Config.HighJump.DefaultJumpHeight
     notify("HighJump", "Performed HighJump with method: " .. HighJumpStatus.Method, true)
 end
 
@@ -470,7 +480,7 @@ HighJump.SetJumpPower = function(newPower)
 end
 
 HighJump.RestoreJumpHeight = function()
-    local humanoid = getCharacterData()
+    local humanoid, _ = getCharacterData()
     if humanoid then
         humanoid.JumpHeight = LocalPlayer.Config.HighJump.DefaultJumpHeight
     end
