@@ -819,351 +819,353 @@ end
 local function SetupUI(UI)
     local uiElements = {}
 
-    if UI.Sections.Timer then
-        UI.Sections.Timer:Header({ Name = "Timer" })
-        uiElements.TimerEnabled = UI.Sections.Timer:Toggle({
-            Name = "Enabled",
-            Default = LocalPlayer.Config.Timer.Enabled,
-            Callback = function(value)
-                TimerStatus.Enabled = value
-                LocalPlayer.Config.Timer.Enabled = value
-                if value then Timer.Start() else Timer.Stop() end
-            end
-        }, "TimerEnabled")
-        uiElements.TimerSpeed = UI.Sections.Timer:Slider({
-            Name = "Speed",
-            Minimum = 1,
-            Maximum = 15,
-            Default = LocalPlayer.Config.Timer.Speed,
-            Precision = 1,
-            Callback = function(value)
-                Timer.SetSpeed(value)
-                LocalPlayer.Config.Timer.Speed = value
-            end
-        }, "TimerSpeed")
-        uiElements.TimerKey = UI.Sections.Timer:Keybind({
-            Name = "Toggle Key",
-            Default = LocalPlayer.Config.Timer.ToggleKey,
-            Callback = function(value)
-                TimerStatus.Key = value
-                LocalPlayer.Config.Timer.ToggleKey = value
-                if isInputFocused() then return end
-                if TimerStatus.Enabled then
-                    if TimerStatus.Running then Timer.Stop() else Timer.Start() end
-                else
-                    notify("Timer", "Enable Timer to use keybind.", true)
+    if UI.Tabs.LocalPlayer then
+        if UI.Tabs.LocalPlayer:Section({ Name = "Timer" }) then
+            UI.Tabs.LocalPlayer:Section({ Name = "Timer" }):Header({ Name = "Timer" })
+            uiElements.TimerEnabled = UI.Tabs.LocalPlayer:Section({ Name = "Timer" }):Toggle({
+                Name = "Enabled",
+                Default = LocalPlayer.Config.Timer.Enabled,
+                Callback = function(value)
+                    TimerStatus.Enabled = value
+                    LocalPlayer.Config.Timer.Enabled = value
+                    if value then Timer.Start() else Timer.Stop() end
                 end
-            end
-        }, "TimerKey")
-    end
-
-    if UI.Sections.Disabler then
-        UI.Sections.Disabler:Header({ Name = "Disabler" })
-        uiElements.DisablerEnabled = UI.Sections.Disabler:Toggle({
-            Name = "Enabled",
-            Default = LocalPlayer.Config.Disabler.Enabled,
-            Callback = function(value)
-                DisablerStatus.Enabled = value
-                LocalPlayer.Config.Disabler.Enabled = value
-                if value then Disabler.Start() else Disabler.Stop() end
-            end
-        }, "DisablerEnabled")
-        uiElements.DisablerKey = UI.Sections.Disabler:Keybind({
-            Name = "Toggle Key",
-            Default = LocalPlayer.Config.Disabler.ToggleKey,
-            Callback = function(value)
-                DisablerStatus.Key = value
-                LocalPlayer.Config.Disabler.ToggleKey = value
-                if isInputFocused() then return end
-                if DisablerStatus.Enabled then
-                    if DisablerStatus.Running then Disabler.Stop() else Disabler.Start() end
-                else
-                    notify("Disabler", "Enable Disabler to use keybind.", true)
+            }, "TimerEnabled")
+            uiElements.TimerSpeed = UI.Tabs.LocalPlayer:Section({ Name = "Timer" }):Slider({
+                Name = "Speed",
+                Minimum = 1,
+                Maximum = 15,
+                Default = LocalPlayer.Config.Timer.Speed,
+                Precision = 1,
+                Callback = function(value)
+                    Timer.SetSpeed(value)
+                    LocalPlayer.Config.Timer.Speed = value
                 end
-            end
-        }, "DisablerKey")
-    end
-
-    if UI.Sections.Speed then
-        UI.Sections.Speed:Header({ Name = "Speed" })
-        uiElements.SpeedEnabled = UI.Sections.Speed:Toggle({
-            Name = "Enabled",
-            Default = LocalPlayer.Config.Speed.Enabled,
-            Callback = function(value)
-                SpeedStatus.Enabled = value
-                LocalPlayer.Config.Speed.Enabled = value
-                if value then Speed.Start() else Speed.Stop() end
-            end
-        }, "SpeedEnabled")
-        uiElements.SpeedAutoJump = UI.Sections.Speed:Toggle({
-            Name = "AutoJump",
-            Default = LocalPlayer.Config.Speed.AutoJump,
-            Callback = function(value)
-                SpeedStatus.AutoJump = value
-                LocalPlayer.Config.Speed.AutoJump = value
-                notify("Speed", "AutoJump " .. (value and "Enabled" or "Disabled"), true)
-            end
-        }, "SpeedAutoJump")
-        uiElements.SpeedMethod = UI.Sections.Speed:Dropdown({
-            Name = "Method",
-            Options = {"CFrame", "PulseTP"},
-            Default = LocalPlayer.Config.Speed.Method,
-            Callback = function(value)
-                Speed.SetMethod(value)
-                LocalPlayer.Config.Speed.Method = value
-            end
-        }, "SpeedMethod")
-        uiElements.Speed = UI.Sections.Speed:Slider({
-            Name = "Speed",
-            Minimum = 16,
-            Maximum = 250,
-            Default = LocalPlayer.Config.Speed.Speed,
-            Precision = 1,
-            Callback = function(value)
-                Speed.SetSpeed(value)
-                LocalPlayer.Config.Speed.Speed = value
-            end
-        }, "Speed")
-        uiElements.SpeedJumpPower = UI.Sections.Speed:Slider({
-            Name = "Jump Power",
-            Minimum = 10,
-            Maximum = 100,
-            Default = LocalPlayer.Config.Speed.JumpPower,
-            Precision = 1,
-            Callback = function(value)
-                Speed.SetJumpPower(value)
-                LocalPlayer.Config.Speed.JumpPower = value
-            end
-        }, "SpeedJumpPower")
-        uiElements.SpeedJumpInterval = UI.Sections.Speed:Slider({
-            Name = "Jump Interval",
-            Minimum = 0.1,
-            Maximum = 2,
-            Default = LocalPlayer.Config.Speed.JumpInterval,
-            Precision = 1,
-            Callback = function(value)
-                Speed.SetJumpInterval(value)
-                LocalPlayer.Config.Speed.JumpInterval = value
-            end
-        }, "SpeedJumpInterval")
-        uiElements.SpeedPulseTPDistance = UI.Sections.Speed:Slider({
-            Name = "PulseTP Dist",
-            Minimum = 1,
-            Maximum = 20,
-            Default = LocalPlayer.Config.Speed.PulseTPDist,
-            Precision = 1,
-            Callback = function(value)
-                Speed.SetPulseTPDistance(value)
-                LocalPlayer.Config.Speed.PulseTPDist = value
-            end
-        }, "SpeedPulseTPDistance")
-        uiElements.SpeedPulseTPFrequency = UI.Sections.Speed:Slider({
-            Name = "PulseTP Delay",
-            Minimum = 0.1,
-            Maximum = 1,
-            Default = LocalPlayer.Config.Speed.PulseTPDelay,
-            Precision = 2,
-            Callback = function(value)
-                Speed.SetPulseTPFrequency(value)
-                LocalPlayer.Config.Speed.PulseTPDelay = value
-            end
-        }, "SpeedPulseTPFrequency")
-        uiElements.SpeedKey = UI.Sections.Speed:Keybind({
-            Name = "Toggle Key",
-            Default = LocalPlayer.Config.Speed.ToggleKey,
-            Callback = function(value)
-                SpeedStatus.Key = value
-                LocalPlayer.Config.Speed.ToggleKey = value
-                if isInputFocused() then return end
-                if SpeedStatus.Enabled then
-                    if SpeedStatus.Running then Speed.Stop() else Speed.Start() end
-                else
-                    notify("Speed", "Enable Speed to use keybind.", true)
+            }, "TimerSpeed")
+            uiElements.TimerKey = UI.Tabs.LocalPlayer:Section({ Name = "Timer" }):Keybind({
+                Name = "Toggle Key",
+                Default = LocalPlayer.Config.Timer.ToggleKey,
+                Callback = function(value)
+                    TimerStatus.Key = value
+                    LocalPlayer.Config.Timer.ToggleKey = value
+                    if isInputFocused() then return end
+                    if TimerStatus.Enabled then
+                        if TimerStatus.Running then Timer.Stop() else Timer.Start() end
+                    else
+                        notify("Timer", "Enable Timer to use keybind.", true)
+                    end
                 end
-            end
-        }, "SpeedKey")
-    end
+            }, "TimerKey")
+        end
 
-    if UI.Sections.TickSpeed then
-        UI.Sections.TickSpeed:Header({ Name = "TickSpeed" })
-        uiElements.TickSpeedEnabled = UI.Sections.TickSpeed:Toggle({
-            Name = "Enabled",
-            Default = LocalPlayer.Config.TickSpeed.Enabled,
-            Callback = function(value)
-                TickSpeedStatus.Enabled = value
-                LocalPlayer.Config.TickSpeed.Enabled = value
-                if value then TickSpeed.Start() else TickSpeed.Stop() end
-            end
-        }, "TickSpeedEnabled")
-        uiElements.TickSpeedHighMultiplier = UI.Sections.TickSpeed:Slider({
-            Name = "High Speed Multiplier",
-            Minimum = 1,
-            Maximum = 3,
-            Default = LocalPlayer.Config.TickSpeed.HighSpeedMultiplier,
-            Precision = 1,
-            Callback = function(value)
-                TickSpeed.SetHighSpeedMultiplier(value)
-                LocalPlayer.Config.TickSpeed.HighSpeedMultiplier = value
-            end
-        }, "TickSpeedHighMultiplier")
-        uiElements.TickSpeedNormalMultiplier = UI.Sections.TickSpeed:Slider({
-            Name = "Normal Speed Multiplier",
-            Minimum = 0.1,
-            Maximum = 1,
-            Default = LocalPlayer.Config.TickSpeed.NormalSpeedMultiplier,
-            Precision = 1,
-            Callback = function(value)
-                TickSpeed.SetNormalSpeedMultiplier(value)
-                LocalPlayer.Config.TickSpeed.NormalSpeedMultiplier = value
-            end
-        }, "TickSpeedNormalMultiplier")
-        uiElements.TickSpeedOnDuration = UI.Sections.TickSpeed:Slider({
-            Name = "On Duration",
-            Minimum = 0.05,
-            Maximum = 0.5,
-            Default = LocalPlayer.Config.TickSpeed.OnDuration,
-            Precision = 2,
-            Callback = function(value)
-                TickSpeed.SetOnDuration(value)
-                LocalPlayer.Config.TickSpeed.OnDuration = value
-            end
-        }, "TickSpeedOnDuration")
-        uiElements.TickSpeedOffDuration = UI.Sections.TickSpeed:Slider({
-            Name = "Off Duration",
-            Minimum = 0.1,
-            Maximum = 0.5,
-            Default = LocalPlayer.Config.TickSpeed.OffDuration,
-            Precision = 2,
-            Callback = function(value)
-                TickSpeed.SetOffDuration(value)
-                LocalPlayer.Config.TickSpeed.OffDuration = value
-            end
-        }, "TickSpeedOffDuration")
-        uiElements.TickSpeedKey = UI.Sections.TickSpeed:Keybind({
-            Name = "Toggle Key",
-            Default = LocalPlayer.Config.TickSpeed.ToggleKey,
-            Callback = function(value)
-                TickSpeedStatus.Key = value
-                LocalPlayer.Config.TickSpeed.ToggleKey = value
-                if isInputFocused() then return end
-                if TickSpeedStatus.Enabled then
-                    if TickSpeedStatus.Running then TickSpeed.Stop() else TickSpeed.Start() end
-                else
-                    notify("TickSpeed", "Enable TickSpeed to use keybind.", true)
+        if UI.Tabs.LocalPlayer:Section({ Name = "Disabler" }) then
+            UI.Tabs.LocalPlayer:Section({ Name = "Disabler" }):Header({ Name = "Disabler" })
+            uiElements.DisablerEnabled = UI.Tabs.LocalPlayer:Section({ Name = "Disabler" }):Toggle({
+                Name = "Enabled",
+                Default = LocalPlayer.Config.Disabler.Enabled,
+                Callback = function(value)
+                    DisablerStatus.Enabled = value
+                    LocalPlayer.Config.Disabler.Enabled = value
+                    if value then Disabler.Start() else Disabler.Stop() end
                 end
-            end
-        }, "TickSpeedKey")
-    end
-
-    if UI.Sections.HighJump then
-        UI.Sections.HighJump:Header({ Name = "HighJump" })
-        uiElements.HighJumpEnabled = UI.Sections.HighJump:Toggle({
-            Name = "Enabled",
-            Default = LocalPlayer.Config.HighJump.Enabled,
-            Callback = function(value)
-                HighJumpStatus.Enabled = value
-                LocalPlayer.Config.HighJump.Enabled = value
-                if not value then
-                    HighJump.RestoreJumpHeight()
+            }, "DisablerEnabled")
+            uiElements.DisablerKey = UI.Tabs.LocalPlayer:Section({ Name = "Disabler" }):Keybind({
+                Name = "Toggle Key",
+                Default = LocalPlayer.Config.Disabler.ToggleKey,
+                Callback = function(value)
+                    DisablerStatus.Key = value
+                    LocalPlayer.Config.Disabler.ToggleKey = value
+                    if isInputFocused() then return end
+                    if DisablerStatus.Enabled then
+                        if DisablerStatus.Running then Disabler.Stop() else Disabler.Start() end
+                    else
+                        notify("Disabler", "Enable Disabler to use keybind.", true)
+                    end
                 end
-                notify("HighJump", "HighJump " .. (value and "Enabled" or "Disabled"), true)
-            end
-        }, "HighJumpEnabled")
-        uiElements.HighJumpMethod = UI.Sections.HighJump:Dropdown({
-            Name = "Method",
-            Options = {"Velocity", "CFrame"},
-            Default = LocalPlayer.Config.HighJump.Method,
-            Callback = function(value)
-                HighJump.SetMethod(value)
-                LocalPlayer.Config.HighJump.Method = value
-            end
-        }, "HighJumpMethod")
-        uiElements.HighJumpPower = UI.Sections.HighJump:Slider({
-            Name = "Jump Power",
-            Minimum = 50,
-            Maximum = 200,
-            Default = LocalPlayer.Config.HighJump.JumpPower,
-            Precision = 1,
-            Callback = function(value)
-                HighJump.SetJumpPower(value)
-                LocalPlayer.Config.HighJump.JumpPower = value
-            end
-        }, "HighJumpPower")
-        uiElements.HighJumpKey = UI.Sections.HighJump:Keybind({
-            Name = "Jump Key",
-            Default = LocalPlayer.Config.HighJump.JumpKey,
-            Callback = function(value)
-                HighJumpStatus.Key = value
-                LocalPlayer.Config.HighJump.JumpKey = value
-                if isInputFocused() then return end
-                HighJump.Trigger()
-            end
-        }, "HighJumpKey")
-    end
+            }, "DisablerKey")
+        end
 
-    if UI.Sections.NoRagdoll then
-        UI.Sections.NoRagdoll:Header({ Name = "NoRagdoll" })
-        uiElements.NoRagdollEnabled = UI.Sections.NoRagdoll:Toggle({
-            Name = "Enabled",
-            Default = LocalPlayer.Config.NoRagdoll.Enabled,
-            Callback = function(value)
-                NoRagdollStatus.Enabled = value
-                LocalPlayer.Config.NoRagdoll.Enabled = value
-                if value then NoRagdoll.Start(LocalPlayerObj.Character) else NoRagdoll.Stop() end
-            end
-        }, "NoRagdollEnabled")
-    end
-
-    if UI.Sections.FastAttack then
-        UI.Sections.FastAttack:Header({ Name = "FastAttack" })
-        uiElements.FastAttackEnabled = UI.Sections.FastAttack:Toggle({
-            Name = "Enabled",
-            Default = LocalPlayer.Config.FastAttack.Enabled,
-            Callback = function(value)
-                FastAttackStatus.Enabled = value
-                LocalPlayer.Config.FastAttack.Enabled = value
-                if value then FastAttack.Start() else FastAttack.Stop() end
-            end
-        }, "FastAttackEnabled")
-    end
-
-    if UI.Sections.Invisible then
-        UI.Sections.Invisible:Header({ Name = "Invisible" })
-        uiElements.InvisibleEnabled = UI.Sections.Invisible:Toggle({
-            Name = "Enabled",
-            Default = LocalPlayer.Config.Invisible.Enabled,
-            Callback = function(value)
-                InvisibleStatus.Enabled = value
-                LocalPlayer.Config.Invisible.Enabled = value
-                if value then
-                    if not InvisibleStatus.Running then Invisible.Toggle() end
-                else
-                    if InvisibleStatus.Running then Invisible.Toggle() end
+        if UI.Tabs.LocalPlayer:Section({ Name = "Speed" }) then
+            UI.Tabs.LocalPlayer:Section({ Name = "Speed" }):Header({ Name = "Speed" })
+            uiElements.SpeedEnabled = UI.Tabs.LocalPlayer:Section({ Name = "Speed" }):Toggle({
+                Name = "Enabled",
+                Default = LocalPlayer.Config.Speed.Enabled,
+                Callback = function(value)
+                    SpeedStatus.Enabled = value
+                    LocalPlayer.Config.Speed.Enabled = value
+                    if value then Speed.Start() else Speed.Stop() end
                 end
-            end
-        }, "InvisibleEnabled")
-        uiElements.InvisibleMode = UI.Sections.Invisible:Dropdown({
-            Name = "Mode",
-            Options = {"Full", "Semi", "Low"},
-            Default = LocalPlayer.Config.Invisible.Mode,
-            Callback = function(value)
-                Invisible.SetMode(value)
-            end
-        }, "InvisibleMode")
-        uiElements.InvisibleKey = UI.Sections.Invisible:Keybind({
-            Name = "Toggle Key",
-            Default = LocalPlayer.Config.Invisible.ToggleKey,
-            Callback = function(value)
-                InvisibleStatus.Key = value
-                LocalPlayer.Config.Invisible.ToggleKey = value
-                if isInputFocused() then return end
-                if InvisibleStatus.Enabled then
-                    Invisible.Toggle()
-                else
-                    notify("Invisible", "Enable Invisible to use keybind.", true)
+            }, "SpeedEnabled")
+            uiElements.SpeedAutoJump = UI.Tabs.LocalPlayer:Section({ Name = "Speed" }):Toggle({
+                Name = "AutoJump",
+                Default = LocalPlayer.Config.Speed.AutoJump,
+                Callback = function(value)
+                    SpeedStatus.AutoJump = value
+                    LocalPlayer.Config.Speed.AutoJump = value
+                    notify("Speed", "AutoJump " .. (value and "Enabled" or "Disabled"), true)
                 end
-            end
-        }, "InvisibleKey")
+            }, "SpeedAutoJump")
+            uiElements.SpeedMethod = UI.Tabs.LocalPlayer:Section({ Name = "Speed" }):Dropdown({
+                Name = "Method",
+                Options = {"CFrame", "PulseTP"},
+                Default = LocalPlayer.Config.Speed.Method,
+                Callback = function(value)
+                    Speed.SetMethod(value)
+                    LocalPlayer.Config.Speed.Method = value
+                end
+            }, "SpeedMethod")
+            uiElements.Speed = UI.Tabs.LocalPlayer:Section({ Name = "Speed" }):Slider({
+                Name = "Speed",
+                Minimum = 16,
+                Maximum = 250,
+                Default = LocalPlayer.Config.Speed.Speed,
+                Precision = 1,
+                Callback = function(value)
+                    Speed.SetSpeed(value)
+                    LocalPlayer.Config.Speed.Speed = value
+                end
+            }, "Speed")
+            uiElements.SpeedJumpPower = UI.Tabs.LocalPlayer:Section({ Name = "Speed" }):Slider({
+                Name = "Jump Power",
+                Minimum = 10,
+                Maximum = 100,
+                Default = LocalPlayer.Config.Speed.JumpPower,
+                Precision = 1,
+                Callback = function(value)
+                    Speed.SetJumpPower(value)
+                    LocalPlayer.Config.Speed.JumpPower = value
+                end
+            }, "SpeedJumpPower")
+            uiElements.SpeedJumpInterval = UI.Tabs.LocalPlayer:Section({ Name = "Speed" }):Slider({
+                Name = "Jump Interval",
+                Minimum = 0.1,
+                Maximum = 2,
+                Default = LocalPlayer.Config.Speed.JumpInterval,
+                Precision = 1,
+                Callback = function(value)
+                    Speed.SetJumpInterval(value)
+                    LocalPlayer.Config.Speed.JumpInterval = value
+                end
+            }, "SpeedJumpInterval")
+            uiElements.SpeedPulseTPDistance = UI.Tabs.LocalPlayer:Section({ Name = "Speed" }):Slider({
+                Name = "PulseTP Dist",
+                Minimum = 1,
+                Maximum = 20,
+                Default = LocalPlayer.Config.Speed.PulseTPDist,
+                Precision = 1,
+                Callback = function(value)
+                    Speed.SetPulseTPDistance(value)
+                    LocalPlayer.Config.Speed.PulseTPDist = value
+                end
+            }, "SpeedPulseTPDistance")
+            uiElements.SpeedPulseTPFrequency = UI.Tabs.LocalPlayer:Section({ Name = "Speed" }):Slider({
+                Name = "PulseTP Delay",
+                Minimum = 0.1,
+                Maximum = 1,
+                Default = LocalPlayer.Config.Speed.PulseTPDelay,
+                Precision = 2,
+                Callback = function(value)
+                    Speed.SetPulseTPFrequency(value)
+                    LocalPlayer.Config.Speed.PulseTPDelay = value
+                end
+            }, "SpeedPulseTPFrequency")
+            uiElements.SpeedKey = UI.Tabs.LocalPlayer:Section({ Name = "Speed" }):Keybind({
+                Name = "Toggle Key",
+                Default = LocalPlayer.Config.Speed.ToggleKey,
+                Callback = function(value)
+                    SpeedStatus.Key = value
+                    LocalPlayer.Config.Speed.ToggleKey = value
+                    if isInputFocused() then return end
+                    if SpeedStatus.Enabled then
+                        if SpeedStatus.Running then Speed.Stop() else Speed.Start() end
+                    else
+                        notify("Speed", "Enable Speed to use keybind.", true)
+                    end
+                end
+            }, "SpeedKey")
+        end
+
+        if UI.Tabs.LocalPlayer:Section({ Name = "TickSpeed" }) then
+            UI.Tabs.LocalPlayer:Section({ Name = "TickSpeed" }):Header({ Name = "TickSpeed" })
+            uiElements.TickSpeedEnabled = UI.Tabs.LocalPlayer:Section({ Name = "TickSpeed" }):Toggle({
+                Name = "Enabled",
+                Default = LocalPlayer.Config.TickSpeed.Enabled,
+                Callback = function(value)
+                    TickSpeedStatus.Enabled = value
+                    LocalPlayer.Config.TickSpeed.Enabled = value
+                    if value then TickSpeed.Start() else TickSpeed.Stop() end
+                end
+            }, "TickSpeedEnabled")
+            uiElements.TickSpeedHighMultiplier = UI.Tabs.LocalPlayer:Section({ Name = "TickSpeed" }):Slider({
+                Name = "High Speed Multiplier",
+                Minimum = 1,
+                Maximum = 3,
+                Default = LocalPlayer.Config.TickSpeed.HighSpeedMultiplier,
+                Precision = 1,
+                Callback = function(value)
+                    TickSpeed.SetHighSpeedMultiplier(value)
+                    LocalPlayer.Config.TickSpeed.HighSpeedMultiplier = value
+                end
+            }, "TickSpeedHighMultiplier")
+            uiElements.TickSpeedNormalMultiplier = UI.Tabs.LocalPlayer:Section({ Name = "TickSpeed" }):Slider({
+                Name = "Normal Speed Multiplier",
+                Minimum = 0.1,
+                Maximum = 1,
+                Default = LocalPlayer.Config.TickSpeed.NormalSpeedMultiplier,
+                Precision = 1,
+                Callback = function(value)
+                    TickSpeed.SetNormalSpeedMultiplier(value)
+                    LocalPlayer.Config.TickSpeed.NormalSpeedMultiplier = value
+                end
+            }, "TickSpeedNormalMultiplier")
+            uiElements.TickSpeedOnDuration = UI.Tabs.LocalPlayer:Section({ Name = "TickSpeed" }):Slider({
+                Name = "On Duration",
+                Minimum = 0.05,
+                Maximum = 0.5,
+                Default = LocalPlayer.Config.TickSpeed.OnDuration,
+                Precision = 2,
+                Callback = function(value)
+                    TickSpeed.SetOnDuration(value)
+                    LocalPlayer.Config.TickSpeed.OnDuration = value
+                end
+            }, "TickSpeedOnDuration")
+            uiElements.TickSpeedOffDuration = UI.Tabs.LocalPlayer:Section({ Name = "TickSpeed" }):Slider({
+                Name = "Off Duration",
+                Minimum = 0.1,
+                Maximum = 0.5,
+                Default = LocalPlayer.Config.TickSpeed.OffDuration,
+                Precision = 2,
+                Callback = function(value)
+                    TickSpeed.SetOffDuration(value)
+                    LocalPlayer.Config.TickSpeed.OffDuration = value
+                end
+            }, "TickSpeedOffDuration")
+            uiElements.TickSpeedKey = UI.Tabs.LocalPlayer:Section({ Name = "TickSpeed" }):Keybind({
+                Name = "Toggle Key",
+                Default = LocalPlayer.Config.TickSpeed.ToggleKey,
+                Callback = function(value)
+                    TickSpeedStatus.Key = value
+                    LocalPlayer.Config.TickSpeed.ToggleKey = value
+                    if isInputFocused() then return end
+                    if TickSpeedStatus.Enabled then
+                        if TickSpeedStatus.Running then TickSpeed.Stop() else TickSpeed.Start() end
+                    else
+                        notify("TickSpeed", "Enable TickSpeed to use keybind.", true)
+                    end
+                end
+            }, "TickSpeedKey")
+        end
+
+        if UI.Tabs.LocalPlayer:Section({ Name = "HighJump" }) then
+            UI.Tabs.LocalPlayer:Section({ Name = "HighJump" }):Header({ Name = "HighJump" })
+            uiElements.HighJumpEnabled = UI.Tabs.LocalPlayer:Section({ Name = "HighJump" }):Toggle({
+                Name = "Enabled",
+                Default = LocalPlayer.Config.HighJump.Enabled,
+                Callback = function(value)
+                    HighJumpStatus.Enabled = value
+                    LocalPlayer.Config.HighJump.Enabled = value
+                    if not value then
+                        HighJump.RestoreJumpHeight()
+                    end
+                    notify("HighJump", "HighJump " .. (value and "Enabled" or "Disabled"), true)
+                end
+            }, "HighJumpEnabled")
+            uiElements.HighJumpMethod = UI.Tabs.LocalPlayer:Section({ Name = "HighJump" }):Dropdown({
+                Name = "Method",
+                Options = {"Velocity", "CFrame"},
+                Default = LocalPlayer.Config.HighJump.Method,
+                Callback = function(value)
+                    HighJump.SetMethod(value)
+                    LocalPlayer.Config.HighJump.Method = value
+                end
+            }, "HighJumpMethod")
+            uiElements.HighJumpPower = UI.Tabs.LocalPlayer:Section({ Name = "HighJump" }):Slider({
+                Name = "Jump Power",
+                Minimum = 50,
+                Maximum = 200,
+                Default = LocalPlayer.Config.HighJump.JumpPower,
+                Precision = 1,
+                Callback = function(value)
+                    HighJump.SetJumpPower(value)
+                    LocalPlayer.Config.HighJump.JumpPower = value
+                end
+            }, "HighJumpPower")
+            uiElements.HighJumpKey = UI.Tabs.LocalPlayer:Section({ Name = "HighJump" }):Keybind({
+                Name = "Jump Key",
+                Default = LocalPlayer.Config.HighJump.JumpKey,
+                Callback = function(value)
+                    HighJumpStatus.Key = value
+                    LocalPlayer.Config.HighJump.JumpKey = value
+                    if isInputFocused() then return end
+                    HighJump.Trigger()
+                end
+            }, "HighJumpKey")
+        end
+
+        if UI.Tabs.LocalPlayer:Section({ Name = "NoRagdoll" }) then
+            UI.Tabs.LocalPlayer:Section({ Name = "NoRagdoll" }):Header({ Name = "NoRagdoll" })
+            uiElements.NoRagdollEnabled = UI.Tabs.LocalPlayer:Section({ Name = "NoRagdoll" }):Toggle({
+                Name = "Enabled",
+                Default = LocalPlayer.Config.NoRagdoll.Enabled,
+                Callback = function(value)
+                    NoRagdollStatus.Enabled = value
+                    LocalPlayer.Config.NoRagdoll.Enabled = value
+                    if value then NoRagdoll.Start(LocalPlayerObj.Character) else NoRagdoll.Stop() end
+                end
+            }, "NoRagdollEnabled")
+        end
+
+        if UI.Tabs.LocalPlayer:Section({ Name = "FastAttack" }) then
+            UI.Tabs.LocalPlayer:Section({ Name = "FastAttack" }):Header({ Name = "FastAttack" })
+            uiElements.FastAttackEnabled = UI.Tabs.LocalPlayer:Section({ Name = "FastAttack" }):Toggle({
+                Name = "Enabled",
+                Default = LocalPlayer.Config.FastAttack.Enabled,
+                Callback = function(value)
+                    FastAttackStatus.Enabled = value
+                    LocalPlayer.Config.FastAttack.Enabled = value
+                    if value then FastAttack.Start() else FastAttack.Stop() end
+                end
+            }, "FastAttackEnabled")
+        end
+
+        if UI.Tabs.LocalPlayer:Section({ Name = "Invisible" }) then
+            UI.Tabs.LocalPlayer:Section({ Name = "Invisible" }):Header({ Name = "Invisible" })
+            uiElements.InvisibleEnabled = UI.Tabs.LocalPlayer:Section({ Name = "Invisible" }):Toggle({
+                Name = "Enabled",
+                Default = LocalPlayer.Config.Invisible.Enabled,
+                Callback = function(value)
+                    InvisibleStatus.Enabled = value
+                    LocalPlayer.Config.Invisible.Enabled = value
+                    if value then
+                        if not InvisibleStatus.Running then Invisible.Toggle() end
+                    else
+                        if InvisibleStatus.Running then Invisible.Toggle() end
+                    end
+                end
+            }, "InvisibleEnabled")
+            uiElements.InvisibleMode = UI.Tabs.LocalPlayer:Section({ Name = "Invisible" }):Dropdown({
+                Name = "Mode",
+                Options = {"Full", "Semi", "Low"},
+                Default = LocalPlayer.Config.Invisible.Mode,
+                Callback = function(value)
+                    Invisible.SetMode(value)
+                end
+            }, "InvisibleMode")
+            uiElements.InvisibleKey = UI.Tabs.LocalPlayer:Section({ Name = "Invisible" }):Keybind({
+                Name = "Toggle Key",
+                Default = LocalPlayer.Config.Invisible.ToggleKey,
+                Callback = function(value)
+                    InvisibleStatus.Key = value
+                    LocalPlayer.Config.Invisible.ToggleKey = value
+                    if isInputFocused() then return end
+                    if InvisibleStatus.Enabled then
+                        Invisible.Toggle()
+                    else
+                        notify("Invisible", "Enable Invisible to use keybind.", true)
+                    end
+                end
+            }, "InvisibleKey")
+        end
     end
 
     local localconfigSection = UI.Tabs.Config:Section({ Name = "Local Player Sync", Side = "Right" })
