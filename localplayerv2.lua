@@ -1127,9 +1127,9 @@ local function SetupUI(UI)
         }, "FastAttackEnabled")
     end
 
-    if UI.Sections.LocalPlayer then
-        UI.Sections.LocalPlayer:Header({ Name = "Invisible" })
-        uiElements.InvisibleEnabled = UI.Sections.LocalPlayer:Toggle({
+    if UI.Sections.Invisible then
+        UI.Sections.Invisible:Header({ Name = "Invisible" })
+        uiElements.InvisibleEnabled = UI.Sections.Invisible:Toggle({
             Name = "Enabled",
             Default = LocalPlayer.Config.Invisible.Enabled,
             Callback = function(value)
@@ -1142,7 +1142,7 @@ local function SetupUI(UI)
                 end
             end
         }, "InvisibleEnabled")
-        uiElements.InvisibleMode = UI.Sections.LocalPlayer:Dropdown({
+        uiElements.InvisibleMode = UI.Sections.Invisible:Dropdown({
             Name = "Mode",
             Options = {"Full", "Semi", "Low"},
             Default = LocalPlayer.Config.Invisible.Mode,
@@ -1150,7 +1150,7 @@ local function SetupUI(UI)
                 Invisible.SetMode(value)
             end
         }, "InvisibleMode")
-        uiElements.InvisibleKey = UI.Sections.LocalPlayer:Keybind({
+        uiElements.InvisibleKey = UI.Sections.Invisible:Keybind({
             Name = "Toggle Key",
             Default = LocalPlayer.Config.Invisible.ToggleKey,
             Callback = function(value)
