@@ -54,8 +54,19 @@ LocalPlayer.Config = {
 }
 
 -- Состояния модулей
-local TimerStatus = { Running = false, Connection = nil, Speed = LocalPlayer.Config.Timer.Speed, Key = LocalPlayer.Config.Timer.ToggleKey, Enabled = LocalPlayer.Config.Timer.Enabled }
-local DisablerStatus = { Running = false, Connection = nil, Key = LocalPlayer.Config.Disabler.ToggleKey, Enabled = LocalPlayer.Config.Disabler.Enabled }
+local TimerStatus = {
+    Running = false,
+    Connection = nil,
+    Speed = LocalPlayer.Config.Timer.Speed,
+    Key = LocalPlayer.Config.Timer.ToggleKey,
+    Enabled = LocalPlayer.Config.Timer.Enabled
+}
+local DisablerStatus = {
+    Running = false,
+    Connection = nil,
+    Key = LocalPlayer.Config.Disabler.ToggleKey,
+    Enabled = LocalPlayer.Config.Disabler.Enabled
+}
 local SpeedStatus = {
     Running = false,
     Connection = nil,
@@ -129,156 +140,6 @@ local function checkWallCollision(rootPart, moveDirection)
         raycastParams
     )
     return raycastResult ~= nil
-end
-
--- TickSpeed Functions
-local TickSpeed = {}
-TickSpeed.Start = function()
-    if TickSpeedStatus.Running then return end
-    local _, rootPart = getCharacterData()
-    if not rootPart then return end
-
-    local success, err = pcall(function()
-        setsimulationradius(10000)
-    end)
-    if not success then
-        warn("TickSpeed: setsimulationradius failed: " .. tostring(err))
-        notify("TickSpeed", "Failed to set simulation radius.", true)
-        return
-    end
-
-    TickSpeedStatus.Running = true
-    TickSpeedStatus.LastServerPosition = rootPart.Position
-
-    TickSpeedStatus.Connection = Services.RunService.Heartbeat:Connect(function(deltaTime)
-        if not TickSpeedStatus.Enabled or not TickSpeedStatus.Running then return end
-        local humanoid, rootPart = getCharacterData()
-        if not humanoid or not rootPart then return end
-
-        local moveDirection = humanoid.MoveDirection
-        if moveDirection.Magnitude > 0 and checkWallCollision(rootPart, moveDirection) then
-            return -- Отключаем TickSpeed при движении в стену
-        end
-
-        TickSpeedStatus.Timer = (TickSpeedStatus.Timer + deltaTime) % (TickSpeedStatus.OnDuration + TickSpeedStatus.OffDuration)
-        local currentMultiplier = TickSpeedStatus.Timer < TickSpeedStatus.OnDeviation ? TickSpeedStatus.HighSpeedMultiplier : TickSpeedStatus.NormalSpeedMultiplier
-
-        if moveDirection.Magnitude > 0 then
-            moveDirection = moveDirection.Unit
-            local speed = 16 * currentMultiplier
-            local offset = moveDirection * speed * deltaTime
-            local newCFrame = rootPart.CFrame + offset
-            rootPart.CFrame = CFrame.new(newCFrame.Position, newCFrame.Position + moveDirection)
-
-            local deviation = (rootPart.Position - TickSpeedStatus.LastServerPosition).Magnitude
-            if deviation > 5 then
-                local correction = (rootPart.Position - TickSpeedStatus.LastServerPosition).Unit * (deviation - 5)
-                rootPart.CFrame = CFrame.new(rootPart.Position - correction)
-            end
-        end
-    end)
-
-    TickSpeedStatus.ServerConnection = Services.RunService.Stepped:Connect(function()
-        local _, rootPart = getCharacterData()
-        if not rootPart then return end
-        local serverPos = rootPart.Position
-        if (serverPos - TickSpeedStatus.LastServerPosition).Magnitude > 1 then
-            TickSpeedStatus.LastServerPosition = serverPos
-        end
-    end)
-
-    notify("TickSpeed", "Started", true)
-end
-
-TickSpeed.Stop = function()
-    if TickSpeedStatus.Connection then
-        TickSpeedStatus.Connection:Disconnect()
-        TickSpeedStatus.Connection = nil
-    end
-    if TickSpeedStatus.ServerConnection then
-        TickSpeedStatus.ServerConnection:Disconnect()
-        TickSpeedStatus.ServerConnection = nil
-    end
-    TickSpeedStatus.Running = false
-    TickSpeedStatus.Timer = 0
-    local _, rootPart = getCharacterData()
-    if rootPart and TickSpeedStatus.LastServerPosition then
-        rootPart.CFrame = CFrame.new(TickSpeedStatus.LastServerPosition)
-    end
-    notify("TickSpeed", "Stopped", true)
-end
-
-TickSpeed.SetHighSpeedMultiplier = function(value)
-    TickSpeedStatus.HighSpeedMultiplier = value
-    LocalPlayer.Config.TickSpeed.HighSpeedMultiplier = value
-    notify("TickSpeed", "HighSpeedMultiplier set to: " .. value, false)
-end
-
-TickSpeed.SetNormalSpeedMultiplier = function(value)
-    TickSpeedStatus.NormalSpeedMultiplier = value
-    LocalPlayer.Config.TickSpeed.NormalSpeedMultiplier = value
-    notify("TickSpeed", "NormalSpeedMultiplier set to: " .. value, false)
-end
-
-TickSpeed.SetOnDuration = function(value)
-    TickSpeedStatus.OnDuration = value
-    LocalPlayer.Config.TickSpeed.OnDuration = value
-    notify("TickSpeed", "OnDuration set to: " .. value, false)
-end
-
-TickSpeed.SetOffDuration = function(value)
-    TickSpeedStatus.OffDuration = value
-    LocalPlayer.Config.TickSpeed.OffDuration = value
-    notify("TickSpeed", "OffDuration set to: " .. value, false)
-end
-
--- FastAttack Functions
-local FastAttack = {}
-FastAttack.Start = function()
-    if FastAttackStatus.Connection then
-        FastAttackStatus.Connection:Disconnect()
-        FastAttackStatus.Connection = nil
-    end
-
-    FastAttackStatus.Connection = Services.RunService.Heartbeat:Connect(function()
-        if not FastAttackStatus.Enabled then return end
-        local currentTime = tick()
-        if currentTime - FastAttackStatus.LastCheckTime < FastAttackStatus.CheckInterval then return end
-        FastAttackStatus.LastCheckTime = currentTime
-
-        local backpack = LocalPlayerObj:FindFirstChild("Backpack")
-        if not backpack then return end
-
-        for _, item in ipairs(backpack:GetChildren()) do
-            if item.Name == "fists" or item:GetAttribute("Speed") then
-                pcall(function()
-                    item:SetAttribute("Speed", 0) -- Убрал динамическую AttackSpeed для стабильности
-                end)
-            end
-        end
-    end)
-
-    notify("FastAttack", "Started with Speed set to 0", true)
-end
-
-FastAttack.Stop = function()
-    if FastAttackStatus.Connection then
-        FastAttackStatus.Connection:Disconnect()
-        FastAttackStatus.Connection = nil
-    end
-
-    local backpack = LocalPlayerObj:FindFirstChild("Backpack")
-    if backpack then
-        for _, item in ipairs(backpack:GetChildren()) do
-            if item.Name == "fists" or item:GetAttribute("Speed") then
-                pcall(function()
-                    item:SetAttribute("Speed", 1)
-                end)
-            end
-        end
-    end
-
-    notify("FastAttack", "Stopped, attack speed restored to 1", true)
 end
 
 -- Timer Functions
@@ -476,6 +337,107 @@ Speed.SetJumpInterval = function(newInterval)
     notify("Speed", "JumpInterval set to: " .. newInterval, false)
 end
 
+-- TickSpeed Functions
+local TickSpeed = {}
+TickSpeed.Start = function()
+    if TickSpeedStatus.Running then return end
+    local _, rootPart = getCharacterData()
+    if not rootPart then return end
+
+    local success, err = pcall(function()
+        setsimulationradius(10000)
+    end)
+    if not success then
+        warn("TickSpeed: setsimulationradius failed: " .. tostring(err))
+        notify("TickSpeed", "Failed to set simulation radius.", true)
+        return
+    end
+
+    TickSpeedStatus.Running = true
+    TickSpeedStatus.LastServerPosition = rootPart.Position
+
+    TickSpeedStatus.Connection = Services.RunService.Heartbeat:Connect(function(deltaTime)
+        if not TickSpeedStatus.Enabled or not TickSpeedStatus.Running then return end
+        local humanoid, rootPart = getCharacterData()
+        if not humanoid or not rootPart then return end
+
+        local moveDirection = humanoid.MoveDirection
+        if moveDirection.Magnitude > 0 and checkWallCollision(rootPart, moveDirection) then
+            return -- Отключаем TickSpeed при движении в стену
+        end
+
+        TickSpeedStatus.Timer = (TickSpeedStatus.Timer + deltaTime) % (TickSpeedStatus.OnDuration + TickSpeedStatus.OffDuration)
+        local currentMultiplier = TickSpeedStatus.Timer < TickSpeedStatus.OnDuration and TickSpeedStatus.HighSpeedMultiplier or TickSpeedStatus.NormalSpeedMultiplier
+
+        if moveDirection.Magnitude > 0 then
+            moveDirection = moveDirection.Unit
+            local speed = 16 * currentMultiplier
+            local offset = moveDirection * speed * deltaTime
+            local newCFrame = rootPart.CFrame + offset
+            rootPart.CFrame = CFrame.new(newCFrame.Position, newCFrame.Position + moveDirection)
+
+            local deviation = (rootPart.Position - TickSpeedStatus.LastServerPosition).Magnitude
+            if deviation > 5 then
+                local correction = (rootPart.Position - TickSpeedStatus.LastServerPosition).Unit * (deviation - 5)
+                rootPart.CFrame = CFrame.new(rootPart.Position - correction)
+            end
+        end
+    end)
+
+    TickSpeedStatus.ServerConnection = Services.RunService.Stepped:Connect(function()
+        local _, rootPart = getCharacterData()
+        if not rootPart then return end
+        local serverPos = rootPart.Position
+        if (serverPos - TickSpeedStatus.LastServerPosition).Magnitude > 1 then
+            TickSpeedStatus.LastServerPosition = serverPos
+        end
+    end)
+
+    notify("TickSpeed", "Started", true)
+end
+
+TickSpeed.Stop = function()
+    if TickSpeedStatus.Connection then
+        TickSpeedStatus.Connection:Disconnect()
+        TickSpeedStatus.Connection = nil
+    end
+    if TickSpeedStatus.ServerConnection then
+        TickSpeedStatus.ServerConnection:Disconnect()
+        TickSpeedStatus.ServerConnection = nil
+    end
+    TickSpeedStatus.Running = false
+    TickSpeedStatus.Timer = 0
+    local _, rootPart = getCharacterData()
+    if rootPart and TickSpeedStatus.LastServerPosition then
+        rootPart.CFrame = CFrame.new(TickSpeedStatus.LastServerPosition)
+    end
+    notify("TickSpeed", "Stopped", true)
+end
+
+TickSpeed.SetHighSpeedMultiplier = function(value)
+    TickSpeedStatus.HighSpeedMultiplier = value
+    LocalPlayer.Config.TickSpeed.HighSpeedMultiplier = value
+    notify("TickSpeed", "HighSpeedMultiplier set to: " .. value, false)
+end
+
+TickSpeed.SetNormalSpeedMultiplier = function(value)
+    TickSpeedStatus.NormalSpeedMultiplier = value
+    LocalPlayer.Config.TickSpeed.NormalSpeedMultiplier = value
+    notify("TickSpeed", "NormalSpeedMultiplier set to: " .. value, false)
+end
+
+TickSpeed.SetOnDuration = function(value)
+    TickSpeedStatus.OnDuration = value
+    LocalPlayer.Config.TickSpeed.OnDuration = value
+    notify("TickSpeed", "OnDuration set to: " .. value, false)
+end
+
+TickSpeed.SetOffDuration = function(value)
+    TickSpeedStatus.OffDuration = value
+    LocalPlayer.Config.TickSpeed.OffDuration = value
+    notify("TickSpeed", "OffDuration set to: " .. value, false)
+end
+
 -- HighJump Functions
 local HighJump = {}
 HighJump.Trigger = function()
@@ -572,6 +534,55 @@ NoRagdoll.Stop = function()
     end
     NoRagdollStatus.BodyParts = nil
     notify("NoRagdoll", "Stopped", true)
+end
+
+-- FastAttack Functions
+local FastAttack = {}
+FastAttack.Start = function()
+    if FastAttackStatus.Connection then
+        FastAttackStatus.Connection:Disconnect()
+        FastAttackStatus.Connection = nil
+    end
+
+    FastAttackStatus.Connection = Services.RunService.Heartbeat:Connect(function()
+        if not FastAttackStatus.Enabled then return end
+        local currentTime = tick()
+        if currentTime - FastAttackStatus.LastCheckTime < FastAttackStatus.CheckInterval then return end
+        FastAttackStatus.LastCheckTime = currentTime
+
+        local backpack = LocalPlayerObj:FindFirstChild("Backpack")
+        if not backpack then return end
+
+        for _, item in ipairs(backpack:GetChildren()) do
+            if item.Name == "fists" or item:GetAttribute("Speed") then
+                pcall(function()
+                    item:SetAttribute("Speed", 0)
+                end)
+            end
+        end
+    end)
+
+    notify("FastAttack", "Started with Speed set to 0", true)
+end
+
+FastAttack.Stop = function()
+    if FastAttackStatus.Connection then
+        FastAttackStatus.Connection:Disconnect()
+        FastAttackStatus.Connection = nil
+    end
+
+    local backpack = LocalPlayerObj:FindFirstChild("Backpack")
+    if backpack then
+        for _, item in ipairs(backpack:GetChildren()) do
+            if item.Name == "fists" or item:GetAttribute("Speed") then
+                pcall(function()
+                    item:SetAttribute("Speed", 1)
+                end)
+            end
+        end
+    end
+
+    notify("FastAttack", "Stopped, attack speed restored to 1", true)
 end
 
 -- Настройка UI
