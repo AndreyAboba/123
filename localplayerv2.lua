@@ -22,7 +22,7 @@ LocalPlayer.Config = {
         Enabled = false,
         AutoJump = false,
         FakeJump = false,
-        Method = "Velocity",
+        Method = "CFrame", -- Velocity удалён, по умолчанию CFrame
         Speed = 16,
         JumpPower = 50,
         JumpInterval = 0.3,
@@ -211,9 +211,7 @@ end
 -- Speed Functions
 local Speed = {}
 Speed.UpdateMovement = function(humanoid, rootPart, moveDirection, currentTime)
-    if SpeedStatus.Method == "Velocity" then
-        humanoid.WalkSpeed = SpeedStatus.Speed
-    elseif SpeedStatus.Method == "CFrame" then
+    if SpeedStatus.Method == "CFrame" then
         if moveDirection.Magnitude > 0 then
             local newCFrame = rootPart.CFrame + (moveDirection * SpeedStatus.Speed * 0.0167)
             rootPart.CFrame = CFrame.new(newCFrame.Position, newCFrame.Position + moveDirection)
@@ -277,10 +275,6 @@ Speed.Stop = function()
         SpeedStatus.Connection = nil
     end
     SpeedStatus.Running = false
-    local humanoid = getCharacterData()
-    if humanoid then
-        humanoid.WalkSpeed = 16
-    end
     notify("Speed", "Stopped", true)
 end
 
@@ -668,7 +662,7 @@ local function SetupUI(UI)
         }, "SpeedFakeJump")
         uiElements.SpeedMethod = UI.Sections.Speed:Dropdown({
             Name = "Method",
-            Options = {"Velocity", "CFrame", "PulseTP"},
+            Options = {"CFrame", "PulseTP"}, -- Удалён Velocity
             Default = LocalPlayer.Config.Speed.Method,
             Callback = function(value)
                 Speed.SetMethod(value)
