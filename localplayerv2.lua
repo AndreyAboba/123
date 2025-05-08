@@ -957,7 +957,7 @@ local function SetupUI(UI)
                 LocalPlayer.Config.Speed.PulseTPDist = value
             end
         }, "SpeedPulseTPDistance")
-        uiElements.SpeedPulseTPFrequency = UI.Sections.Speed:SimulationsSlider({
+        uiElements.SpeedPulseTPFrequency = UI.Sections.Speed:Slider({
             Name = "PulseTP Delay",
             Minimum = 0.1,
             Maximum = 1,
