@@ -17,7 +17,7 @@ function Visuals.Init(UI, Core, notify)
 
     local ESP = {
         Settings = {
-            Enabled = { Value = true, Default = false },
+            Enabled = { Value = false, Default = false },
             EnemyColor = { Value = Color3.fromRGB(255, 0, 0), Default = Color3.fromRGB(255, 0, 0) },
             FriendColor = { Value = Color3.fromRGB(0, 255, 0), Default = Color3.fromRGB(0, 255, 0) },
             TeamCheck = { Value = true, Default = true },
@@ -40,20 +40,12 @@ function Visuals.Init(UI, Core, notify)
         GuiElements = {},
         LastNotificationTime = 0,
         NotificationDelay = 5,
-        CloseDistance = 300, -- Установлено 300 studs (~100 метров)
+        CloseDistance = 300,
         NearFPS = 50,
-        DefaultFPS = 30,
-        UpdateIntervals = {}
+        DefaultFPS = 30
     }
 
-    local Cache = { 
-        TextBounds = {}, 
-        LastGradientUpdate = 0, 
-        PlayerCache = {}, 
-        CameraPosition = nil,
-        VisiblePlayers = {},
-        LastUpdateTimes = {}
-    }
+    local Cache = { TextBounds = {}, LastGradientUpdate = 0, PlayerCache = {}, LastUpdateTimes = {} }
     local Elements = { Watermark = {} }
 
     local buttonGui = Instance.new("ScreenGui")
@@ -427,8 +419,6 @@ function Visuals.Init(UI, Core, notify)
         test:Remove()
     end)
 
-    local lastUpdate = 0
-
     local function createESP(player)
         if ESP.Elements[player] then return end
 
@@ -448,7 +438,9 @@ function Visuals.Init(UI, Core, notify)
             NameGui = nil,
             LastPosition = nil,
             LastHealth = nil,
-            LastVisible = false
+            LastVisible = false,
+            LastIsFriend = nil,
+            LastFriendsList = nil
         }
 
         for _, line in pairs(esp.BoxLines) do
@@ -493,9 +485,6 @@ function Visuals.Init(UI, Core, notify)
         end
 
         ESP.Elements[player] = esp
-        Cache.PlayerCache[player] = { Character = nil, RootPart = nil, Humanoid = nil, Height = 0 }
-        Cache.LastUpdateTimes[player] = 0
-        ESP.UpdateIntervals[player] = 1 / ESP.DefaultFPS
     end
 
     local function removeESP(player)
@@ -512,8 +501,6 @@ function Visuals.Init(UI, Core, notify)
         ESP.Elements[player] = nil
         Cache.PlayerCache[player] = nil
         Cache.LastUpdateTimes[player] = nil
-        ESP.UpdateIntervals[player] = nil
-        Cache.VisiblePlayers[player] = nil
     end
 
     local function updateESP()
@@ -540,9 +527,6 @@ function Visuals.Init(UI, Core, notify)
         if not localRootPart then return end
 
         local cameraPos = camera.CFrame.Position
-        if Cache.CameraPosition ~= cameraPos then
-            Cache.CameraPosition = cameraPos
-        end
 
         for _, player in pairs(Core.Services.Players:GetPlayers()) do
             if player == localPlayer then continue end
@@ -554,17 +538,11 @@ function Visuals.Init(UI, Core, notify)
             local esp = ESP.Elements[player]
             if not esp then continue end
 
-            local cache = Cache.PlayerCache[player]
-            if not cache.Character or cache.Character ~= player.Character then
-                cache.Character = player.Character
-                cache.RootPart = cache.Character and cache.Character:FindFirstChild("HumanoidRootPart")
-                cache.Humanoid = cache.Character and cache.Character:FindFirstChild("Humanoid")
-                if cache.Humanoid and cache.RootPart then
-                    cache.Height = cache.Humanoid.HipHeight + cache.RootPart.Size.Y
-                end
-            end
+            local character = player.Character
+            local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+            local humanoid = character and character:FindFirstChild("Humanoid")
+            local head = character and character:FindFirstChild("Head")
 
-            local rootPart, humanoid = cache.RootPart, cache.Humanoid
             if not rootPart or not humanoid or humanoid.Health <= 0 then
                 if esp.LastVisible then
                     for _, line in pairs(esp.BoxLines) do line.Visible = false end
@@ -574,16 +552,13 @@ function Visuals.Init(UI, Core, notify)
                     esp.NameDrawing.Visible = false
                     if esp.NameGui then esp.NameGui.Visible = false end
                     esp.LastVisible = false
-                    Cache.VisiblePlayers[player] = false
                 end
                 continue
             end
 
-            local distance = (rootPart.Position - Cache.CameraPosition).Magnitude
+            local distance = (rootPart.Position - cameraPos).Magnitude
             local updateInterval = distance <= ESP.CloseDistance and (1 / ESP.NearFPS) or (1 / ESP.DefaultFPS)
-            ESP.UpdateIntervals[player] = updateInterval
-
-            if currentTime - Cache.LastUpdateTimes[player] < updateInterval then
+            if currentTime - (Cache.LastUpdateTimes[player] or 0) < updateInterval then
                 continue
             end
             Cache.LastUpdateTimes[player] = currentTime
@@ -598,21 +573,26 @@ function Visuals.Init(UI, Core, notify)
                     esp.NameDrawing.Visible = false
                     if esp.NameGui then esp.NameGui.Visible = false end
                     esp.LastVisible = false
-                    Cache.VisiblePlayers[player] = false
                 end
                 continue
             end
 
-            Cache.VisiblePlayers[player] = true
             esp.LastVisible = true
             esp.LastPosition = rootPos
             esp.LastHealth = humanoid.Health
 
-            local headPos = camera:WorldToViewportPoint(rootPart.Position + Vector3.new(0, cache.Height, 0))
-            local feetPos = camera:WorldToViewportPoint(rootPart.Position - Vector3.new(0, cache.Height, 0))
+            local headPos = head and camera:WorldToViewportPoint(head.Position + Vector3.new(0, head.Size.Y / 2 + 0.5, 0)) or camera:WorldToViewportPoint(rootPart.Position + Vector3.new(0, 2, 0))
+            local lowestPoint = rootPart.Position.Y - 4
+            for _, part in pairs(character:GetChildren()) do
+                if part:IsA("BasePart") then
+                    local bottomY = part.Position.Y - part.Size.Y / 2
+                    if bottomY < lowestPoint then lowestPoint = bottomY end
+                end
+            end
+            local feetPos = camera:WorldToViewportPoint(Vector3.new(rootPart.Position.X, lowestPoint, rootPart.Position.Z))
 
             local height = math.abs(headPos.Y - feetPos.Y)
-            local width = height * 0.6
+            local width = math.min(height * 0.6, 100)
 
             local isFriend = esp.LastIsFriend
             if esp.LastFriendsList ~= Core.Services.FriendsList or esp.LastIsFriend == nil then
