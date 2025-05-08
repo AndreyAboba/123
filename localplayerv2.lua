@@ -52,7 +52,7 @@ LocalPlayer.Config = {
     },
     Invisible = {
         Enabled = false,
-        Mode = "Full", -- Full, Semi, Low
+        Mode = "Full",
         ToggleKey = nil
     }
 }
@@ -608,7 +608,11 @@ end
 
 -- Invisible Functions
 local Invisible = {}
-local DEPTH_OFFSET = 0.9588 -- Дополнительное смещение вниз
+local DEPTH_OFFSETS = {
+    Full = 0.9588,
+    Semi = 0.59,
+    Low = 0.1
+}
 
 local function removeFolders()
     local playerFolder = Services.Workspace:FindFirstChild(LocalPlayerObj.Name)
@@ -753,7 +757,7 @@ Invisible.Toggle = function()
                 if LocalPlayerObj.Character and LocalPlayerObj.Character:FindFirstChild("Humanoid") and LocalPlayerObj.Character.Humanoid.Health > 0 and InvisibleStatus.OldRoot then
                     local root = LocalPlayerObj.Character.PrimaryPart or LocalPlayerObj.Character:FindFirstChild("HumanoidRootPart")
                     if root then
-                        local cf = root.CFrame - Vector3.new(0, LocalPlayerObj.Character.Humanoid.HipHeight + (root.Size.Y / 2) - 1 + DEPTH_OFFSET, 0)
+                        local cf = root.CFrame - Vector3.new(0, LocalPlayerObj.Character.Humanoid.HipHeight + (root.Size.Y / 2) - 1 + DEPTH_OFFSETS[InvisibleStatus.Mode], 0)
                         InvisibleStatus.OldRoot.CFrame = cf * CFrame.Angles(math.rad(180), 0, 0)
                         InvisibleStatus.OldRoot.Velocity = root.Velocity
                         InvisibleStatus.OldRoot.CanCollide = false
@@ -778,7 +782,7 @@ Invisible.Toggle = function()
                 end
             end)
 
-            notify("Invisible", "Enabled with depth offset: " .. DEPTH_OFFSET, true)
+            notify("Invisible", "Enabled with mode: " .. InvisibleStatus.Mode .. " (Depth: " .. DEPTH_OFFSETS[InvisibleStatus.Mode] .. ")", true)
         else
             InvisibleStatus.Running = false
             notify("Invisible", "Failed to enable invisibility!", true)
@@ -797,9 +801,14 @@ Invisible.Toggle = function()
     end
 end
 
--- Удаляем SetMode, так как он не используется в оригинальном скрипте
 Invisible.SetMode = function(newMode)
-    notify("Invisible", "Mode setting is not supported in this version.", true)
+    if DEPTH_OFFSETS[newMode] then
+        InvisibleStatus.Mode = newMode
+        LocalPlayer.Config.Invisible.Mode = newMode
+        notify("Invisible", "Mode set to: " .. newMode .. " (Depth: " .. DEPTH_OFFSETS[newMode] .. ")", false)
+    else
+        notify("Invisible", "Invalid mode selected!", true)
+    end
 end
 
 -- Настройка UI
@@ -1129,7 +1138,14 @@ local function SetupUI(UI)
                 end
             end
         }, "InvisibleEnabled")
-        -- Удаляем Dropdown для Mode, так как он не используется
+        uiElements.InvisibleMode = UI.Sections.Invisible:Dropdown({
+            Name = "Mode",
+            Options = {"Full", "Semi", "Low"},
+            Default = LocalPlayer.Config.Invisible.Mode,
+            Callback = function(value)
+                Invisible.SetMode(value)
+            end
+        }, "InvisibleMode")
         uiElements.InvisibleKey = UI.Sections.Invisible:Keybind({
             Name = "Toggle Key",
             Default = LocalPlayer.Config.Invisible.ToggleKey,
@@ -1197,6 +1213,13 @@ local function SetupUI(UI)
             LocalPlayer.Config.FastAttack.Enabled = uiElements.FastAttackEnabled:GetState()
 
             LocalPlayer.Config.Invisible.Enabled = uiElements.InvisibleEnabled:GetState()
+            local invisibleModeOptions = uiElements.InvisibleMode:GetOptions()
+            for option, selected in pairs(invisibleModeOptions) do
+                if selected then
+                    LocalPlayer.Config.Invisible.Mode = option
+                    break
+                end
+            end
             LocalPlayer.Config.Invisible.ToggleKey = uiElements.InvisibleKey:GetBind()
 
             TimerStatus.Enabled = LocalPlayer.Config.Timer.Enabled
@@ -1266,6 +1289,7 @@ local function SetupUI(UI)
             end
 
             InvisibleStatus.Enabled = LocalPlayer.Config.Invisible.Enabled
+            InvisibleStatus.Mode = LocalPlayer.Config.Invisible.Mode
             InvisibleStatus.Key = LocalPlayer.Config.Invisible.ToggleKey
             if InvisibleStatus.Enabled then
                 if not InvisibleStatus.Running then Invisible.Toggle() end
