@@ -599,6 +599,8 @@ function Vehicles.Init(UI, Core, notify)
             task.wait(0.1)
             u5.send("lockpick_success", vehicleSeat.Parent)
             task.wait(0.1)
+        else
+            notify("Vehicle Exploit", "Net module not loaded, skipping lockpicking.", true)
         end
         sitInVehicle(vehicleSeat)
     end
