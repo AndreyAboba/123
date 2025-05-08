@@ -485,7 +485,7 @@ function Visuals.Init(UI, Core, notify)
         end
 
         ESP.Elements[player] = esp
-        Cache.PlayerCache[player] = { Character = nil, RootPart = nil, Humanoid = nil, Head = nil }
+        Cache.PlayerCache[player] = { Character = nil, RootPart = nil, Humanoid = nil, Head = nil, Height = 0 }
     end
 
     local function removeESP(player)
@@ -546,6 +546,9 @@ function Visuals.Init(UI, Core, notify)
                 cache.RootPart = cache.Character and cache.Character:FindFirstChild("HumanoidRootPart")
                 cache.Humanoid = cache.Character and cache.Character:FindFirstChild("Humanoid")
                 cache.Head = cache.Character and cache.Character:FindFirstChild("Head")
+                if cache.Humanoid and cache.RootPart then
+                    cache.Height = cache.Humanoid.HipHeight + cache.RootPart.Size.Y
+                end
             end
 
             local rootPart, humanoid, head = cache.RootPart, cache.Humanoid, cache.Head
@@ -576,15 +579,8 @@ function Visuals.Init(UI, Core, notify)
             esp.LastPosition = rootPos
             esp.LastHealth = humanoid.Health
 
-            local headPos = head and camera:WorldToViewportPoint(head.Position + Vector3.new(0, head.Size.Y / 2 + 0.5, 0)) or camera:WorldToViewportPoint(rootPart.Position + Vector3.new(0, 2, 0))
-            local lowestPoint = rootPart.Position.Y - 4
-            for _, part in pairs(cache.Character:GetChildren()) do
-                if part:IsA("BasePart") then
-                    local bottomY = part.Position.Y - part.Size.Y / 2
-                    if bottomY < lowestPoint then lowestPoint = bottomY end
-                end
-            end
-            local feetPos = camera:WorldToViewportPoint(Vector3.new(rootPart.Position.X, lowestPoint, rootPart.Position.Z))
+            local headPos = head and camera:WorldToViewportPoint(head.Position + Vector3.new(0, head.Size.Y / 2, 0)) or camera:WorldToViewportPoint(rootPart.Position + Vector3.new(0, cache.Height, 0))
+            local feetPos = camera:WorldToViewportPoint(rootPart.Position - Vector3.new(0, cache.Height, 0))
 
             local height = math.abs(headPos.Y - feetPos.Y)
             local width = height * 0.6
