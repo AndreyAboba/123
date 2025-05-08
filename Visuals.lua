@@ -17,7 +17,7 @@ function Visuals.Init(UI, Core, notify)
 
     local ESP = {
         Settings = {
-            Enabled = { Value = true, Default = true }, -- Включаем ESP по умолчанию для теста
+            Enabled = { Value = true, Default = true },
             EnemyColor = { Value = Color3.fromRGB(255, 0, 0), Default = Color3.fromRGB(255, 0, 0) },
             FriendColor = { Value = Color3.fromRGB(0, 255, 0), Default = Color3.fromRGB(0, 255, 0) },
             TeamCheck = { Value = true, Default = true },
@@ -40,13 +40,13 @@ function Visuals.Init(UI, Core, notify)
         GuiElements = {},
         LastNotificationTime = 0,
         NotificationDelay = 5,
-        UpdateInterval = 0.05
+        UpdateInterval = 1 / 29 -- Частота 29 FPS (~0.0345 сек)
     }
 
     local Cache = { TextBounds = {}, LastGradientUpdate = 0, PlayerCache = {} }
     local Elements = { Watermark = {} }
 
-    -- Тестовый квадрат для проверки рендеринга Drawing API
+    -- Тестовый квадрат для проверки рендеринга
     local testSquare = Drawing.new("Square")
     testSquare.Position = Vector2.new(100, 100)
     testSquare.Size = Vector2.new(50, 50)
@@ -464,7 +464,8 @@ function Visuals.Init(UI, Core, notify)
             LastVisible = false,
             LastUpdateTime = 0,
             LastIsFriend = nil,
-            LastFriendsList = nil
+            LastFriendsList = nil,
+            LastCharacter = nil
         }
 
         for _, line in pairs(esp.BoxLines) do
@@ -559,22 +560,25 @@ function Visuals.Init(UI, Core, notify)
         local players = Core.Services.Players:GetPlayers()
         print("Total players in game: " .. #players)
 
+        -- Проверяем, что все игроки добавлены в ESP.Elements
         for _, player in pairs(players) do
             if player == Core.PlayerData.LocalPlayer then continue end
-
             if not ESP.Elements[player] then
                 print("Player " .. player.Name .. " not in ESP.Elements, creating...")
                 createESP(player)
             end
+        end
 
-            local esp = ESP.Elements[player]
-            if not esp then
-                print("ESP for player " .. player.Name .. " not found after creation attempt")
+        for player, esp in pairs(ESP.Elements) do
+            if not player.Parent then
+                removeESP(player)
                 continue
             end
 
             local cache = Cache.PlayerCache[player] or {}
             local character = player.Character
+
+            -- Проверяем, изменился ли персонаж
             if cache.Character ~= character then
                 cache.Character = character
                 cache.RootPart = character and character:FindFirstChild("HumanoidRootPart")
@@ -586,174 +590,186 @@ function Visuals.Init(UI, Core, notify)
 
             local rootPart, humanoid, head = cache.RootPart, cache.Humanoid, cache.Head
 
-            if rootPart and humanoid and humanoid.Health > 0 then
-                local rootPos, onScreen = camera:WorldToViewportPoint(rootPart.Position)
-                print("Player: " .. player.Name .. ", onScreen: " .. tostring(onScreen) .. ", Root position: (" .. rootPos.X .. ", " .. rootPos.Y .. ")")
+            -- Пропускаем, если нет персонажа или здоровья
+            if not character or not rootPart or not humanoid or humanoid.Health <= 0 then
+                for _, line in pairs(esp.BoxLines) do line.Visible = false end
+                esp.Filled.Visible = false
+                esp.HealthBar.Background.Visible = false
+                esp.HealthBar.Foreground.Visible = false
+                esp.NameDrawing.Visible = false
+                if esp.NameGui then esp.NameGui.Visible = false end
+                print("Player: " .. player.Name .. " has no valid character, rootPart, or health")
+                continue
+            end
 
+            -- Проверяем видимость только если персонаж изменился или игрок ранее не был виден
+            local rootPos, onScreen
+            if esp.LastCharacter ~= character or not esp.LastVisible then
+                rootPos, onScreen = camera:WorldToViewportPoint(rootPart.Position)
                 esp.LastPosition = rootPos
-                esp.LastHealth = humanoid.Health
                 esp.LastVisible = onScreen
-                esp.LastUpdateTime = currentTime
+            else
+                rootPos = esp.LastPosition
+                onScreen = esp.LastVisible
+            end
 
-                if onScreen then
-                    local headPos = head and camera:WorldToViewportPoint(head.Position + Vector3.new(0, head.Size.Y / 2 + 0.5, 0)) or camera:WorldToViewportPoint(rootPart.Position + Vector3.new(0, 2, 0))
-                    local lowestPoint = rootPart.Position.Y - 4
-                    for _, part in pairs(character:GetChildren()) do
-                        if part:IsA("BasePart") then
-                            local bottomY = part.Position.Y - part.Size.Y / 2
-                            if bottomY < lowestPoint then lowestPoint = bottomY end
-                        end
+            esp.LastCharacter = character
+            esp.LastHealth = humanoid.Health
+            esp.LastUpdateTime = currentTime
+
+            print("Player: " .. player.Name .. ", onScreen: " .. tostring(onScreen) .. ", Root position: (" .. rootPos.X .. ", " .. rootPos.Y .. ")")
+
+            if onScreen then
+                local headPos = head and camera:WorldToViewportPoint(head.Position + Vector3.new(0, head.Size.Y / 2 + 0.5, 0)) or camera:WorldToViewportPoint(rootPart.Position + Vector3.new(0, 2, 0))
+                local lowestPoint = rootPart.Position.Y - 4
+                for _, part in pairs(character:GetChildren()) do
+                    if part:IsA("BasePart") then
+                        local bottomY = part.Position.Y - part.Size.Y / 2
+                        if bottomY < lowestPoint then lowestPoint = bottomY end
                     end
-                    local feetPos = camera:WorldToViewportPoint(Vector3.new(rootPart.Position.X, lowestPoint, rootPart.Position.Z))
+                end
+                local feetPos = camera:WorldToViewportPoint(Vector3.new(rootPart.Position.X, lowestPoint, rootPart.Position.Z))
 
-                    local height = math.abs(headPos.Y - feetPos.Y)
-                    local width = math.min(height * 0.6, 100)
+                local height = math.abs(headPos.Y - feetPos.Y)
+                local width = math.min(height * 0.6, 100)
 
-                    local isFriend = esp.LastIsFriend
-                    if esp.LastFriendsList ~= Core.Services.FriendsList or esp.LastIsFriend == nil then
-                        isFriend = Core.Services.FriendsList and Core.Services.FriendsList[player.Name:lower()] or false
-                        esp.LastIsFriend = isFriend
-                        esp.LastFriendsList = Core.Services.FriendsList
+                local isFriend = esp.LastIsFriend
+                if esp.LastFriendsList ~= Core.Services.FriendsList or esp.LastIsFriend == nil then
+                    isFriend = Core.Services.FriendsList and Core.Services.FriendsList[player.Name:lower()] or false
+                    esp.LastIsFriend = isFriend
+                    esp.LastFriendsList = Core.Services.FriendsList
+                end
+
+                local baseColor = (isFriend and ESP.Settings.TeamCheck.Value) and ESP.Settings.FriendColor.Value or ESP.Settings.EnemyColor.Value
+                local gradColor1, gradColor2 = Core.GradientColors.Color1.Value, (isFriend and ESP.Settings.TeamCheck.Value) and Color3.fromRGB(0, 255, 0) or Core.GradientColors.Color2.Value
+
+                local topLeft = Vector2.new(rootPos.X - width / 2, headPos.Y)
+                local topRight = Vector2.new(rootPos.X + width / 2, headPos.Y)
+                local bottomLeft = Vector2.new(rootPos.X - width / 2, feetPos.Y)
+                local bottomRight = Vector2.new(rootPos.X + width / 2, feetPos.Y)
+
+                if ESP.Settings.ShowBox.Value then
+                    local radius = ESP.Settings.CornerRadius.Value
+                    if radius > 0 then
+                        topLeft = topLeft + Vector2.new(radius, radius)
+                        topRight = topRight + Vector2.new(-radius, radius)
+                        bottomLeft = bottomLeft + Vector2.new(radius, -radius)
+                        bottomRight = bottomRight + Vector2.new(-radius, -radius)
                     end
 
-                    local baseColor = (isFriend and ESP.Settings.TeamCheck.Value) and ESP.Settings.FriendColor.Value or ESP.Settings.EnemyColor.Value
-                    local gradColor1, gradColor2 = Core.GradientColors.Color1.Value, (isFriend and ESP.Settings.TeamCheck.Value) and Color3.fromRGB(0, 255, 0) or Core.GradientColors.Color2.Value
+                    local color = baseColor
+                    if ESP.Settings.GradientEnabled.Value then
+                        local t = (math.sin(currentTime * ESP.Settings.GradientSpeed.Value * 0.5) + 1) / 2
+                        color = gradColor1:Lerp(gradColor2, t)
+                    end
 
-                    local topLeft = Vector2.new(rootPos.X - width / 2, headPos.Y)
-                    local topRight = Vector2.new(rootPos.X + width / 2, headPos.Y)
-                    local bottomLeft = Vector2.new(rootPos.X - width / 2, feetPos.Y)
-                    local bottomRight = Vector2.new(rootPos.X + width / 2, feetPos.Y)
+                    for _, line in pairs(esp.BoxLines) do
+                        line.Color = color
+                        line.Thickness = ESP.Settings.Thickness.Value
+                        line.Transparency = 1 - ESP.Settings.Transparency.Value
+                        line.Visible = true
+                    end
 
-                    if ESP.Settings.ShowBox.Value then
-                        local radius = ESP.Settings.CornerRadius.Value
-                        if radius > 0 then
-                            topLeft = topLeft + Vector2.new(radius, radius)
-                            topRight = topRight + Vector2.new(-radius, radius)
-                            bottomLeft = bottomLeft + Vector2.new(radius, -radius)
-                            bottomRight = bottomRight + Vector2.new(-radius, -radius)
-                        end
+                    esp.BoxLines.Top.From = topLeft
+                    esp.BoxLines.Top.To = topRight
+                    esp.BoxLines.Bottom.From = bottomLeft
+                    esp.BoxLines.Bottom.To = bottomRight
+                    esp.BoxLines.Left.From = topLeft
+                    esp.BoxLines.Left.To = bottomLeft
+                    esp.BoxLines.Right.From = topRight
+                    esp.BoxLines.Right.To = bottomRight
 
-                        local color = baseColor
-                        if ESP.Settings.GradientEnabled.Value then
-                            local t = (math.sin(currentTime * ESP.Settings.GradientSpeed.Value * 0.5) + 1) / 2
-                            color = gradColor1:Lerp(gradColor2, t)
-                        end
-
-                        for _, line in pairs(esp.BoxLines) do
-                            line.Color = color
-                            line.Thickness = ESP.Settings.Thickness.Value
-                            line.Transparency = 1 - ESP.Settings.Transparency.Value
-                            line.Visible = true
-                        end
-
-                        esp.BoxLines.Top.From = topLeft
-                        esp.BoxLines.Top.To = topRight
-                        esp.BoxLines.Bottom.From = bottomLeft
-                        esp.BoxLines.Bottom.To = bottomRight
-                        esp.BoxLines.Left.From = topLeft
-                        esp.BoxLines.Left.To = bottomLeft
-                        esp.BoxLines.Right.From = topRight
-                        esp.BoxLines.Right.To = bottomRight
-
-                        if ESP.Settings.FilledEnabled.Value then
-                            if supportsQuad then
-                                esp.Filled.PointA = topLeft
-                                esp.Filled.PointB = topRight
-                                esp.Filled.PointC = bottomRight
-                                esp.Filled.PointD = bottomLeft
-                            else
-                                esp.Filled.Position = Vector2.new(topLeft.X, topLeft.Y)
-                                esp.Filled.Size = Vector2.new(bottomRight.X - topLeft.X, bottomRight.Y - topLeft.Y)
-                            end
-                            esp.Filled.Color = color
-                            esp.Filled.Transparency = 1 - ESP.Settings.FilledTransparency.Value
-                            esp.Filled.Visible = true
+                    if ESP.Settings.FilledEnabled.Value then
+                        if supportsQuad then
+                            esp.Filled.PointA = topLeft
+                            esp.Filled.PointB = topRight
+                            esp.Filled.PointC = bottomRight
+                            esp.Filled.PointD = bottomLeft
                         else
-                            esp.Filled.Visible = false
+                            esp.Filled.Position = Vector2.new(topLeft.X, topLeft.Y)
+                            esp.Filled.Size = Vector2.new(bottomRight.X - topLeft.X, bottomRight.Y - topLeft.Y)
                         end
+                        esp.Filled.Color = color
+                        esp.Filled.Transparency = 1 - ESP.Settings.FilledTransparency.Value
+                        esp.Filled.Visible = true
                     else
-                        for _, line in pairs(esp.BoxLines) do line.Visible = false end
                         esp.Filled.Visible = false
-                    end
-
-                    if ESP.Settings.HealthBarEnabled.Value then
-                        local healthPercent = humanoid.Health / humanoid.MaxHealth
-                        local barColor = Color3.fromRGB(255 * (1 - healthPercent), 255 * healthPercent, 0)
-                        local barLength = (ESP.Settings.BarMethod.Value == "Left" or ESP.Settings.BarMethod.Value == "Right") and height or width
-                        local barWidth = (ESP.Settings.BarMethod.Value == "Left" or ESP.Settings.BarMethod.Value == "Right") and (width / 5) or (height / 5)
-                        local barStart, barEnd
-
-                        if ESP.Settings.BarMethod.Value == "Left" then
-                            barStart = Vector2.new(topLeft.X - barWidth - 2, topLeft.Y)
-                            barEnd = Vector2.new(topLeft.X - barWidth - 2, topLeft.Y + barLength)
-                            esp.HealthBar.Background.From = barStart
-                            esp.HealthBar.Background.To = barEnd
-                            esp.HealthBar.Foreground.From = Vector2.new(barStart.X, barEnd.Y)
-                            esp.HealthBar.Foreground.To = Vector2.new(barStart.X, barEnd.Y - barLength * healthPercent)
-                        elseif ESP.Settings.BarMethod.Value == "Right" then
-                            barStart = Vector2.new(topRight.X + 2, topRight.Y)
-                            barEnd = Vector2.new(topRight.X + 2, topRight.Y + barLength)
-                            esp.HealthBar.Background.From = barStart
-                            esp.HealthBar.Background.To = barEnd
-                            esp.HealthBar.Foreground.From = Vector2.new(barStart.X, barEnd.Y)
-                            esp.HealthBar.Foreground.To = Vector2.new(barStart.X, barEnd.Y - barLength * healthPercent)
-                        elseif ESP.Settings.BarMethod.Value == "Bottom" then
-                            barStart = Vector2.new(topLeft.X, bottomLeft.Y + 2)
-                            barEnd = Vector2.new(topRight.X, bottomRight.Y + 2)
-                            esp.HealthBar.Background.From = barStart
-                            esp.HealthBar.Background.To = barEnd
-                            esp.HealthBar.Foreground.From = barStart
-                            esp.HealthBar.Foreground.To = Vector2.new(barStart.X + barLength * healthPercent, barStart.Y)
-                        elseif ESP.Settings.BarMethod.Value == "Top" then
-                            barStart = Vector2.new(topLeft.X, topLeft.Y - barWidth - 2)
-                            barEnd = Vector2.new(topRight.X, topRight.Y - barWidth - 2)
-                            esp.HealthBar.Background.From = barStart
-                            esp.HealthBar.Background.To = barEnd
-                            esp.HealthBar.Foreground.From = barStart
-                            esp.HealthBar.Foreground.To = Vector2.new(barStart.X + barLength * healthPercent, barStart.Y)
-                        end
-
-                        esp.HealthBar.Background.Visible = true
-                        esp.HealthBar.Foreground.Color = barColor
-                        esp.HealthBar.Foreground.Visible = true
-                    else
-                        esp.HealthBar.Background.Visible = false
-                        esp.HealthBar.Foreground.Visible = false
-                    end
-
-                    if ESP.Settings.ShowNames.Value then
-                        local t = ESP.Settings.GradientEnabled.Value and (math.sin(currentTime * ESP.Settings.GradientSpeed.Value * 0.5) + 1) / 2 or 0
-                        local nameColor = ESP.Settings.GradientEnabled.Value and gradColor1:Lerp(gradColor2, t) or baseColor
-                        local nameY = headPos.Y - 20
-                        if ESP.Settings.HealthBarEnabled.Value and ESP.Settings.BarMethod.Value == "Top" then
-                            nameY = headPos.Y - (width / 5) - 22
-                        end
-                        if ESP.Settings.TextMethod.Value == "Drawing" then
-                            esp.NameDrawing.Text = player.Name
-                            esp.NameDrawing.Position = Vector2.new(rootPos.X, nameY)
-                            esp.NameDrawing.Color = nameColor
-                            esp.NameDrawing.Size = ESP.Settings.TextSize.Value
-                            esp.NameDrawing.Font = ESP.Settings.TextFont.Value
-                            esp.NameDrawing.Visible = true
-                            if esp.NameGui then esp.NameGui.Visible = false end
-                        elseif ESP.Settings.TextMethod.Value == "GUI" and esp.NameGui then
-                            esp.NameGui.Text = player.Name
-                            esp.NameGui.Position = UDim2.new(0, rootPos.X - 100, 0, nameY)
-                            esp.NameGui.TextColor3 = nameColor
-                            esp.NameGui.TextSize = ESP.Settings.TextSize.Value
-                            esp.NameGui.Font = Enum.Font.Gotham
-                            esp.NameGui.Visible = true
-                            esp.NameDrawing.Visible = false
-                        end
-                    else
-                        esp.NameDrawing.Visible = false
-                        if esp.NameGui then esp.NameGui.Visible = false end
                     end
                 else
                     for _, line in pairs(esp.BoxLines) do line.Visible = false end
                     esp.Filled.Visible = false
+                end
+
+                if ESP.Settings.HealthBarEnabled.Value then
+                    local healthPercent = humanoid.Health / humanoid.MaxHealth
+                    local barColor = Color3.fromRGB(255 * (1 - healthPercent), 255 * healthPercent, 0)
+                    local barLength = (ESP.Settings.BarMethod.Value == "Left" or ESP.Settings.BarMethod.Value == "Right") and height or width
+                    local barWidth = (ESP.Settings.BarMethod.Value == "Left" or ESP.Settings.BarMethod.Value == "Right") and (width / 5) or (height / 5)
+                    local barStart, barEnd
+
+                    if ESP.Settings.BarMethod.Value == "Left" then
+                        barStart = Vector2.new(topLeft.X - barWidth - 2, topLeft.Y)
+                        barEnd = Vector2.new(topLeft.X - barWidth - 2, topLeft.Y + barLength)
+                        esp.HealthBar.Background.From = barStart
+                        esp.HealthBar.Background.To = barEnd
+                        esp.HealthBar.Foreground.From = Vector2.new(barStart.X, barEnd.Y)
+                        esp.HealthBar.Foreground.To = Vector2.new(barStart.X, barEnd.Y - barLength * healthPercent)
+                    elseif ESP.Settings.BarMethod.Value == "Right" then
+                        barStart = Vector2.new(topRight.X + 2, topRight.Y)
+                        barEnd = Vector2.new(topRight.X + 2, topRight.Y + barLength)
+                        esp.HealthBar.Background.From = barStart
+                        esp.HealthBar.Background.To = barEnd
+                        esp.HealthBar.Foreground.From = Vector2.new(barStart.X, barEnd.Y)
+                        esp.HealthBar.Foreground.To = Vector2.new(barStart.X, barEnd.Y - barLength * healthPercent)
+                    elseif ESP.Settings.BarMethod.Value == "Bottom" then
+                        barStart = Vector2.new(topLeft.X, bottomLeft.Y + 2)
+                        barEnd = Vector2.new(topRight.X, bottomRight.Y + 2)
+                        esp.HealthBar.Background.From = barStart
+                        esp.HealthBar.Background.To = barEnd
+                        esp.HealthBar.Foreground.From = barStart
+                        esp.HealthBar.Foreground.To = Vector2.new(barStart.X + barLength * healthPercent, barStart.Y)
+                    elseif ESP.Settings.BarMethod.Value == "Top" then
+                        barStart = Vector2.new(topLeft.X, topLeft.Y - barWidth - 2)
+                        barEnd = Vector2.new(topRight.X, topRight.Y - barWidth - 2)
+                        esp.HealthBar.Background.From = barStart
+                        esp.HealthBar.Background.To = barEnd
+                        esp.HealthBar.Foreground.From = barStart
+                        esp.HealthBar.Foreground.To = Vector2.new(barStart.X + barLength * healthPercent, barStart.Y)
+                    end
+
+                    esp.HealthBar.Background.Visible = true
+                    esp.HealthBar.Foreground.Color = barColor
+                    esp.HealthBar.Foreground.Visible = true
+                else
                     esp.HealthBar.Background.Visible = false
                     esp.HealthBar.Foreground.Visible = false
+                end
+
+                if ESP.Settings.ShowNames.Value then
+                    local t = ESP.Settings.GradientEnabled.Value and (math.sin(currentTime * ESP.Settings.GradientSpeed.Value * 0.5) + 1) / 2 or 0
+                    local nameColor = ESP.Settings.GradientEnabled.Value and gradColor1:Lerp(gradColor2, t) or baseColor
+                    local nameY = headPos.Y - 20
+                    if ESP.Settings.HealthBarEnabled.Value and ESP.Settings.BarMethod.Value == "Top" then
+                        nameY = headPos.Y - (width / 5) - 22
+                    end
+                    if ESP.Settings.TextMethod.Value == "Drawing" then
+                        esp.NameDrawing.Text = player.Name
+                        esp.NameDrawing.Position = Vector2.new(rootPos.X, nameY)
+                        esp.NameDrawing.Color = nameColor
+                        esp.NameDrawing.Size = ESP.Settings.TextSize.Value
+                        esp.NameDrawing.Font = ESP.Settings.TextFont.Value
+                        esp.NameDrawing.Visible = true
+                        if esp.NameGui then esp.NameGui.Visible = false end
+                    elseif ESP.Settings.TextMethod.Value == "GUI" and esp.NameGui then
+                        esp.NameGui.Text = player.Name
+                        esp.NameGui.Position = UDim2.new(0, rootPos.X - 100, 0, nameY)
+                        esp.NameGui.TextColor3 = nameColor
+                        esp.NameGui.TextSize = ESP.Settings.TextSize.Value
+                        esp.NameGui.Font = Enum.Font.Gotham
+                        esp.NameGui.Visible = true
+                        esp.NameDrawing.Visible = false
+                    end
+                else
                     esp.NameDrawing.Visible = false
                     if esp.NameGui then esp.NameGui.Visible = false end
                 end
@@ -764,7 +780,6 @@ function Visuals.Init(UI, Core, notify)
                 esp.HealthBar.Foreground.Visible = false
                 esp.NameDrawing.Visible = false
                 if esp.NameGui then esp.NameGui.Visible = false end
-                print("Player: " .. player.Name .. " has no valid character, rootPart, or health")
             end
         end
     end
@@ -778,6 +793,7 @@ function Visuals.Init(UI, Core, notify)
         end
     end
 
+    -- Добавляем обработчик для новых игроков
     Core.Services.Players.PlayerAdded:Connect(function(player)
         if player ~= Core.PlayerData.LocalPlayer then
             print("Player added: " .. player.Name)
@@ -785,7 +801,10 @@ function Visuals.Init(UI, Core, notify)
         end
     end)
 
+    -- Обработчик для игроков, покинувших игру
     Core.Services.Players.PlayerRemoving:Connect(removeESP)
+
+    -- Подключаем обновление ESP
     Core.Services.RunService.RenderStepped:Connect(updateESP)
 
     if UI.Tabs and UI.Tabs.Visuals then
