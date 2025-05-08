@@ -55,22 +55,35 @@ function Vehicles.Init(UI, Core, notify)
     local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
     local RunService = Core.Services.RunService
 
-    -- Загрузка модулей через pcall для отладки
-    local successU5, u5 = pcall(function()
-        return require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Core"):WaitForChild("Net"))
-    end)
-    if not successU5 then
-        warn("Failed to require Net: " .. tostring(u5))
-    end
-    print("u5 loaded:", successU5)
+    -- Попытка загрузки модулей через глобальное окружение
+    local globalRequire = getfenv().require or require -- Получаем глобальный require
+    local u5, u11
 
-    local successU11, u11 = pcall(function()
-        return require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Game"):WaitForChild("VehicleSystem"):WaitForChild("Vehicle"))
+    -- Проверка и загрузка Net
+    local netModule = ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Core"):WaitForChild("Net")
+    local successU5, resultU5 = pcall(function()
+        return globalRequire(netModule)
     end)
-    if not successU11 then
-        warn("Failed to require Vehicle: " .. tostring(u11))
+    if successU5 then
+        u5 = resultU5
+        print("u5 loaded successfully:", u5)
+    else
+        warn("Failed to require Net via globalRequire: " .. tostring(resultU5))
+        u5 = nil
     end
-    print("u11 loaded:", successU11)
+
+    -- Проверка и загрузка Vehicle
+    local vehicleModule = ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Game"):WaitForChild("VehicleSystem"):WaitForChild("Vehicle")
+    local successU11, resultU11 = pcall(function()
+        return globalRequire(vehicleModule)
+    end)
+    if successU11 then
+        u11 = resultU11
+        print("u11 loaded successfully:", u11)
+    else
+        warn("Failed to require Vehicle via globalRequire: " .. tostring(resultU11))
+        u11 = nil
+    end
 
     -- Общая функция: получение текущего транспорта
     local function getCurrentVehicle()
@@ -480,7 +493,7 @@ function Vehicles.Init(UI, Core, notify)
         if not vehicleSeat then return end
 
         local vehicle = vehicleSeat.Parent
-        if successU11 and u11 and u11.class and u11.class.get then
+        if u11 and u11.class and u11.class.get then
             local vehicleState = u11.class.get(vehicle)
             if vehicleState and vehicleState.states and vehicleState.states.locked and vehicleState.states.locked.get then
                 if vehicleState.states.locked.get() then
@@ -524,7 +537,7 @@ function Vehicles.Init(UI, Core, notify)
         if not vehicleSeat then return end
 
         local vehicle = vehicleSeat.Parent
-        if successU11 and u11 and u11.class and u11.class.get then
+        if u11 and u11.class and u11.class.get then
             local vehicleState = u11.class.get(vehicle)
             if vehicleState and vehicleState.states and vehicleState.states.locked and vehicleState.states.locked.get then
                 if vehicleState.states.locked.get() then
@@ -594,7 +607,7 @@ function Vehicles.Init(UI, Core, notify)
             notify("Vehicle Exploit", "Vehicle not found: " .. vehicleName, true)
             return
         end
-        if successU5 and u5 and u5.send then
+        if u5 and u5.send then
             u5.send("initiate_lockpicking", vehicleSeat.Parent)
             task.wait(0.1)
             u5.send("lockpick_success", vehicleSeat.Parent)
