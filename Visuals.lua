@@ -40,21 +40,19 @@ function Visuals.Init(UI, Core, notify)
         GuiElements = {},
         LastNotificationTime = 0,
         NotificationDelay = 5,
-        CloseDistance = 50,
-        FarDistance = 100, -- Добавлено для более детального управления частотой
+        CloseDistance = 300, -- Установлено 300 studs (~100 метров)
         NearFPS = 50,
-        MidFPS = 30, -- Новая промежуточная частота
-        FarFPS = 15, -- Понижен для дальней дистанции
-        UpdateIntervals = {} -- Храним интервалы обновления для каждого игрока
+        DefaultFPS = 30,
+        UpdateIntervals = {}
     }
 
     local Cache = { 
         TextBounds = {}, 
         LastGradientUpdate = 0, 
         PlayerCache = {}, 
-        CameraPosition = nil, -- Кэшируем позицию камеры
-        VisiblePlayers = {}, -- Кэш видимых игроков
-        LastUpdateTimes = {} -- Время последнего обновления для каждого игрока
+        CameraPosition = nil,
+        VisiblePlayers = {},
+        LastUpdateTimes = {}
     }
     local Elements = { Watermark = {} }
 
@@ -495,9 +493,9 @@ function Visuals.Init(UI, Core, notify)
         end
 
         ESP.Elements[player] = esp
-        Cache.PlayerCache[player] = { Character = nil, RootPart = nil, Humanoid = nil, Head = nil, Height = 0 }
+        Cache.PlayerCache[player] = { Character = nil, RootPart = nil, Humanoid = nil, Height = 0 }
         Cache.LastUpdateTimes[player] = 0
-        ESP.UpdateIntervals[player] = 1 / ESP.FarFPS -- Начальный интервал
+        ESP.UpdateIntervals[player] = 1 / ESP.DefaultFPS
     end
 
     local function removeESP(player)
@@ -541,7 +539,6 @@ function Visuals.Init(UI, Core, notify)
         local localRootPart = localCharacter and localCharacter:FindFirstChild("HumanoidRootPart")
         if not localRootPart then return end
 
-        -- Кэшируем позицию камеры
         local cameraPos = camera.CFrame.Position
         if Cache.CameraPosition ~= cameraPos then
             Cache.CameraPosition = cameraPos
@@ -562,7 +559,6 @@ function Visuals.Init(UI, Core, notify)
                 cache.Character = player.Character
                 cache.RootPart = cache.Character and cache.Character:FindFirstChild("HumanoidRootPart")
                 cache.Humanoid = cache.Character and cache.Character:FindFirstChild("Humanoid")
-                cache.Head = cache.Character and cache.Character:FindFirstChild("Head")
                 if cache.Humanoid and cache.RootPart then
                     cache.Height = cache.Humanoid.HipHeight + cache.RootPart.Size.Y
                 end
@@ -583,20 +579,10 @@ function Visuals.Init(UI, Core, notify)
                 continue
             end
 
-            -- Вычисляем расстояние до игрока
             local distance = (rootPart.Position - Cache.CameraPosition).Magnitude
-            -- Определяем частоту обновления на основе расстояния
-            local updateInterval
-            if distance < ESP.CloseDistance then
-                updateInterval = 1 / ESP.NearFPS
-            elseif distance < ESP.FarDistance then
-                updateInterval = 1 / ESP.MidFPS
-            else
-                updateInterval = 1 / ESP.FarFPS
-            end
+            local updateInterval = distance <= ESP.CloseDistance and (1 / ESP.NearFPS) or (1 / ESP.DefaultFPS)
             ESP.UpdateIntervals[player] = updateInterval
 
-            -- Проверяем, нужно ли обновлять игрока
             if currentTime - Cache.LastUpdateTimes[player] < updateInterval then
                 continue
             end
@@ -622,7 +608,7 @@ function Visuals.Init(UI, Core, notify)
             esp.LastPosition = rootPos
             esp.LastHealth = humanoid.Health
 
-            local headPos = cache.Head and camera:WorldToViewportPoint(cache.Head.Position + Vector3.new(0, cache.Head.Size.Y / 2, 0)) or camera:WorldToViewportPoint(rootPart.Position + Vector3.new(0, cache.Height, 0))
+            local headPos = camera:WorldToViewportPoint(rootPart.Position + Vector3.new(0, cache.Height, 0))
             local feetPos = camera:WorldToViewportPoint(rootPart.Position - Vector3.new(0, cache.Height, 0))
 
             local height = math.abs(headPos.Y - feetPos.Y)
