@@ -6,8 +6,6 @@ local Services = nil
 local PlayerData = nil
 local notify = nil
 local LocalPlayerObj = nil
-local cachedHumanoid = nil
-local cachedRootPart = nil
 
 -- Локальная конфигурация модуля
 LocalPlayer.Config = {
@@ -113,23 +111,20 @@ local FastAttackStatus = {
     Enabled = LocalPlayer.Config.FastAttack.Enabled,
     Connection = nil,
     LastCheckTime = 0,
-    CheckInterval = 0.5 -- Увеличен интервал до 0.5 сек
+    CheckInterval = 0.5
 }
 
 -- Вспомогательные функции
-local function updateCharacterData()
+local function getCharacterData()
     local character = LocalPlayerObj.Character
-    if character then
-        cachedHumanoid = character:FindFirstChild("Humanoid")
-        cachedRootPart = character:FindFirstChild("HumanoidRootPart")
-    else
-        cachedHumanoid = nil
-        cachedRootPart = nil
-    end
+    if not character then return nil, nil end
+    local humanoid = character:FindFirstChild("Humanoid")
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    return humanoid, rootPart
 end
 
-local function isCharacterValid()
-    return cachedHumanoid and cachedRootPart and cachedHumanoid.Health > 0
+local function isCharacterValid(humanoid, rootPart)
+    return humanoid and rootPart and humanoid.Health > 0
 end
 
 local function isInVehicle(rootPart)
@@ -159,10 +154,11 @@ Timer.Start = function()
     TimerStatus.Running = true
     TimerStatus.Connection = Services.RunService.RenderStepped:Connect(function(dt)
         if TimerStatus.Speed <= 1 then return end
-        if not isCharacterValid() then return end
+        local humanoid, rootPart = getCharacterData()
+        if not isCharacterValid(humanoid, rootPart) then return end
         local success, err = pcall(function()
             Services.RunService:Pause()
-            Services.Workspace:StepPhysics(dt * (TimerStatus.Speed - 1), {cachedRootPart})
+            Services.Workspace:StepPhysics(dt * (TimerStatus.Speed - 1), {rootPart})
             Services.RunService:Run()
         end)
         if not success then
@@ -223,33 +219,35 @@ end
 
 -- Speed Functions
 local Speed = {}
-Speed.UpdateMovement = function(moveDirection, currentTime)
+Speed.UpdateMovement = function(humanoid, rootPart, moveDirection, currentTime)
+    if not isCharacterValid(humanoid, rootPart) then return end
     if SpeedStatus.Method == "CFrame" then
         if moveDirection.Magnitude > 0 then
-            local newCFrame = cachedRootPart.CFrame + (moveDirection * SpeedStatus.Speed * 0.0167)
-            cachedRootPart.CFrame = CFrame.new(newCFrame.Position, newCFrame.Position + moveDirection)
+            local newCFrame = rootPart.CFrame + (moveDirection * SpeedStatus.Speed * 0.0167)
+            rootPart.CFrame = CFrame.new(newCFrame.Position, newCFrame.Position + moveDirection)
         end
     elseif SpeedStatus.Method == "PulseTP" then
         if moveDirection.Magnitude > 0 and currentTime - SpeedStatus.LastPulseTPTime >= SpeedStatus.PulseTPFrequency then
             local teleportVector = moveDirection.Unit * SpeedStatus.PulseTPDistance
-            local destination = cachedRootPart.Position + teleportVector
+            local destination = rootPart.Position + teleportVector
             local raycastParams = RaycastParams.new()
             raycastParams.FilterDescendantsInstances = {LocalPlayerObj.Character}
             raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-            local raycastResult = Services.Workspace:Raycast(cachedRootPart.Position, teleportVector, raycastParams)
+            local raycastResult = Services.Workspace:Raycast(rootPart.Position, teleportVector, raycastParams)
             if not raycastResult then
-                cachedRootPart.CFrame = CFrame.new(destination, destination + moveDirection)
+                rootPart.CFrame = CFrame.new(destination, destination + moveDirection)
                 SpeedStatus.LastPulseTPTime = currentTime
             end
         end
     end
 end
 
-Speed.UpdateJumps = function(currentTime)
+Speed.UpdateJumps = function(humanoid, rootPart, currentTime)
+    if not isCharacterValid(humanoid, rootPart) then return end
     if SpeedStatus.AutoJump and currentTime - SpeedStatus.LastJumpTime >= SpeedStatus.JumpInterval then
-        if cachedHumanoid:GetState() ~= Enum.HumanoidStateType.Jumping and cachedHumanoid:GetState() ~= Enum.HumanoidStateType.Freefall then
-            cachedRootPart.Velocity = Vector3.new(cachedRootPart.Velocity.X, SpeedStatus.JumpPower, cachedRootPart.Velocity.Z)
-            cachedHumanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+        if humanoid:GetState() ~= Enum.HumanoidStateType.Jumping and humanoid:GetState() ~= Enum.HumanoidStateType.Freefall then
+            rootPart.Velocity = Vector3.new(rootPart.Velocity.X, SpeedStatus.JumpPower, rootPart.Velocity.Z)
+            humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
             SpeedStatus.LastJumpTime = currentTime
         end
     end
@@ -263,12 +261,13 @@ Speed.Start = function()
 
     SpeedStatus.Running = true
     SpeedStatus.Connection = Services.RunService.Heartbeat:Connect(function()
+        local humanoid, rootPart = getCharacterData()
+        if not isCharacterValid(humanoid, rootPart) then return end
         if not SpeedStatus.Enabled or not SpeedStatus.Running then return end
-        if not isCharacterValid() then return end
         local currentTime = tick()
-        local moveDirection = cachedHumanoid.MoveDirection
-        Speed.UpdateMovement(moveDirection, currentTime)
-        Speed.UpdateJumps(currentTime)
+        local moveDirection = humanoid.MoveDirection
+        Speed.UpdateMovement(humanoid, rootPart, moveDirection, currentTime)
+        Speed.UpdateJumps(humanoid, rootPart, currentTime)
     end)
 
     notify("Speed", "Started with Method: " .. SpeedStatus.Method, true)
@@ -327,8 +326,9 @@ end
 local TickSpeed = {}
 TickSpeed.Start = function()
     if TickSpeedStatus.Running then return end
-    if not isCharacterValid() then return end
-    if isInVehicle(cachedRootPart) then
+    local humanoid, rootPart = getCharacterData()
+    if not isCharacterValid(humanoid, rootPart) then return end
+    if isInVehicle(rootPart) then
         notify("TickSpeed", "Disabled while in vehicle.", true)
         return
     end
@@ -343,18 +343,19 @@ TickSpeed.Start = function()
     end
 
     TickSpeedStatus.Running = true
-    TickSpeedStatus.LastServerPosition = cachedRootPart.Position
+    TickSpeedStatus.LastServerPosition = rootPart.Position
 
     TickSpeedStatus.Connection = Services.RunService.Heartbeat:Connect(function(deltaTime)
+        local humanoid, rootPart = getCharacterData()
+        if not isCharacterValid(humanoid, rootPart) then return end
         if not TickSpeedStatus.Enabled or not TickSpeedStatus.Running then return end
-        if not isCharacterValid() then return end
-        if isInVehicle(cachedRootPart) then
+        if isInVehicle(rootPart) then
             TickSpeed.Stop()
             notify("TickSpeed", "Disabled while in vehicle.", true)
             return
         end
 
-        local moveDirection = cachedHumanoid.MoveDirection
+        local moveDirection = humanoid.MoveDirection
         TickSpeedStatus.Timer = (TickSpeedStatus.Timer + deltaTime) % (TickSpeedStatus.OnDuration + TickSpeedStatus.OffDuration)
         local currentMultiplier = TickSpeedStatus.Timer < TickSpeedStatus.OnDuration and TickSpeedStatus.HighSpeedMultiplier or TickSpeedStatus.NormalSpeedMultiplier
 
@@ -362,20 +363,21 @@ TickSpeed.Start = function()
             moveDirection = moveDirection.Unit
             local speed = 16 * currentMultiplier
             local offset = moveDirection * speed * deltaTime
-            local newCFrame = cachedRootPart.CFrame + offset
-            cachedRootPart.CFrame = CFrame.new(newCFrame.Position, newCFrame.Position + moveDirection)
+            local newCFrame = rootPart.CFrame + offset
+            rootPart.CFrame = CFrame.new(newCFrame.Position, newCFrame.Position + moveDirection)
 
-            local deviation = (cachedRootPart.Position - TickSpeedStatus.LastServerPosition).Magnitude
+            local deviation = (rootPart.Position - TickSpeedStatus.LastServerPosition).Magnitude
             if deviation > 5 then
-                local correction = (cachedRootPart.Position - TickSpeedStatus.LastServerPosition).Unit * (deviation - 5)
-                cachedRootPart.CFrame = CFrame.new(cachedRootPart.Position - correction)
+                local correction = (rootPart.Position - TickSpeedStatus.LastServerPosition).Unit * (deviation - 5)
+                rootPart.CFrame = CFrame.new(rootPart.Position - correction)
             end
         end
     end)
 
     TickSpeedStatus.ServerConnection = Services.RunService.Stepped:Connect(function()
-        if not isCharacterValid() then return end
-        local serverPos = cachedRootPart.Position
+        local _, rootPart = getCharacterData()
+        if not rootPart then return end
+        local serverPos = rootPart.Position
         if (serverPos - TickSpeedStatus.LastServerPosition).Magnitude > 1 then
             TickSpeedStatus.LastServerPosition = serverPos
         end
@@ -395,8 +397,9 @@ TickSpeed.Stop = function()
     end
     TickSpeedStatus.Running = false
     TickSpeedStatus.Timer = 0
-    if cachedRootPart and TickSpeedStatus.LastServerPosition then
-        cachedRootPart.CFrame = CFrame.new(TickSpeedStatus.LastServerPosition)
+    local _, rootPart = getCharacterData()
+    if rootPart and TickSpeedStatus.LastServerPosition then
+        rootPart.CFrame = CFrame.new(TickSpeedStatus.LastServerPosition)
     end
     notify("TickSpeed", "Stopped", true)
 end
@@ -432,24 +435,25 @@ HighJump.Trigger = function()
         notify("HighJump", "HighJump is disabled. Enable it to use keybind.", true)
         return
     end
-    if not isCharacterValid() then return end
+    local humanoid, rootPart = getCharacterData()
+    if not isCharacterValid(humanoid, rootPart) then return end
     local currentTime = tick()
-    if cachedHumanoid:GetState() ~= Enum.HumanoidStateType.Running or currentTime - HighJumpStatus.LastJumpTime < HighJumpStatus.JumpCooldown then
-        notify("HighJump", cachedHumanoid:GetState() ~= Enum.HumanoidStateType.Running and "You must be on the ground to high jump!" or "HighJump is on cooldown!", true)
+    if humanoid:GetState() ~= Enum.HumanoidStateType.Running or currentTime - HighJumpStatus.LastJumpTime < HighJumpStatus.JumpCooldown then
+        notify("HighJump", humanoid:GetState() ~= Enum.HumanoidStateType.Running and "You must be on the ground to high jump!" or "HighJump is on cooldown!", true)
         return
     end
-    cachedHumanoid.JumpHeight = HighJumpStatus.JumpPower
-    cachedHumanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+    humanoid.JumpHeight = HighJumpStatus.JumpPower
+    humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
     if HighJumpStatus.Method == "Velocity" then
         local gravity = Services.Workspace.Gravity or 196.2
         local jumpVelocity = math.sqrt(2 * HighJumpStatus.JumpPower * gravity)
-        cachedRootPart.Velocity = Vector3.new(cachedRootPart.Velocity.X, jumpVelocity, cachedRootPart.Velocity.Z)
+        rootPart.Velocity = Vector3.new(rootPart.Velocity.X, jumpVelocity, rootPart.Velocity.Z)
     else
-        local newCFrame = cachedRootPart.CFrame + Vector3.new(0, HighJumpStatus.JumpPower / 10, 0)
-        cachedRootPart.CFrame = newCFrame
+        local newCFrame = rootPart.CFrame + Vector3.new(0, HighJumpStatus.JumpPower / 10, 0)
+        rootPart.CFrame = newCFrame
     end
     HighJumpStatus.LastJumpTime = currentTime
-    cachedHumanoid.JumpHeight = LocalPlayer.Config.HighJump.DefaultJumpHeight
+    humanoid.JumpHeight = LocalPlayer.Config.HighJump.DefaultJumpHeight
     notify("HighJump", "Performed HighJump with method: " .. HighJumpStatus.Method, true)
 end
 
@@ -466,8 +470,9 @@ HighJump.SetJumpPower = function(newPower)
 end
 
 HighJump.RestoreJumpHeight = function()
-    if cachedHumanoid then
-        cachedHumanoid.JumpHeight = LocalPlayer.Config.HighJump.DefaultJumpHeight
+    local humanoid = getCharacterData()
+    if humanoid then
+        humanoid.JumpHeight = LocalPlayer.Config.HighJump.DefaultJumpHeight
     end
 end
 
@@ -1013,7 +1018,6 @@ function LocalPlayer.Init(UI, core, notifyFunc)
     _G.setSpeed = Speed.SetSpeed
 
     LocalPlayerObj.CharacterAdded:Connect(function(newChar)
-        updateCharacterData()
         if NoRagdollStatus.Enabled then
             NoRagdoll.Start(newChar)
         end
