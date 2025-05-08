@@ -631,9 +631,35 @@ local function removeFolders()
     end)
 end
 
+local function cleanupInvisible()
+    if InvisibleStatus.AnimTrack then
+        InvisibleStatus.AnimTrack:Stop()
+        InvisibleStatus.AnimTrack:Destroy()
+        InvisibleStatus.AnimTrack = nil
+    end
+    if InvisibleStatus.Connection then
+        InvisibleStatus.Connection:Disconnect()
+        InvisibleStatus.Connection = nil
+    end
+    if InvisibleStatus.CharacterConnection then
+        InvisibleStatus.CharacterConnection:Disconnect()
+        InvisibleStatus.CharacterConnection = nil
+    end
+    if InvisibleStatus.Clone then
+        InvisibleStatus.Clone:Destroy()
+        InvisibleStatus.Clone = nil
+    end
+    InvisibleStatus.OldRoot = nil
+    InvisibleStatus.HipHeight = nil
+    InvisibleStatus.Running = false
+end
+
 local function doClone()
     local humanoid, rootPart = getCharacterData()
     if not isCharacterValid(humanoid, rootPart) then return false end
+
+    -- Очистка предыдущего состояния, если оно некорректно
+    cleanupInvisible()
 
     InvisibleStatus.HipHeight = humanoid.HipHeight
     InvisibleStatus.OldRoot = rootPart
@@ -669,11 +695,11 @@ local function doClone()
 end
 
 local function revertClone()
-    if not InvisibleStatus.OldRoot or not InvisibleStatus.OldRoot:IsDescendantOf(Services.Workspace) then
+    local humanoid, _ = getCharacterData()
+    if not humanoid or humanoid.Health <= 0 or not InvisibleStatus.OldRoot or not InvisibleStatus.OldRoot:IsDescendantOf(Services.Workspace) then
+        cleanupInvisible()
         return false
     end
-    local humanoid, _ = getCharacterData()
-    if not humanoid or humanoid.Health <= 0 then return false end
 
     local tempParent = Instance.new("Model")
     tempParent.Parent = Services.Workspace
@@ -706,6 +732,9 @@ local function revertClone()
     if humanoid then
         humanoid.HipHeight = InvisibleStatus.HipHeight or 2
     end
+
+    cleanupInvisible()
+    return true
 end
 
 local function animationTrickery()
@@ -739,8 +768,8 @@ Invisible.Toggle = function()
         notify("Invisible", "Character not found!", true)
         return
     end
-    local humanoid, _ = getCharacterData()
-    if not humanoid or humanoid.Health <= 0 then
+    local humanoid, rootPart = getCharacterData()
+    if not isCharacterValid(humanoid, rootPart) then
         notify("Invisible", "Character is not valid!", true)
         return
     end
@@ -753,7 +782,10 @@ Invisible.Toggle = function()
             animationTrickery()
             InvisibleStatus.Connection = Services.RunService.PreSimulation:Connect(function(dt)
                 local humanoid, rootPart = getCharacterData()
-                if not isCharacterValid(humanoid, rootPart) or not InvisibleStatus.OldRoot then return end
+                if not isCharacterValid(humanoid, rootPart) or not InvisibleStatus.OldRoot then
+                    Invisible.Toggle() -- Отключаем, если персонаж не валиден
+                    return
+                end
                 local root = LocalPlayerObj.Character.PrimaryPart or LocalPlayerObj.Character:FindFirstChild("HumanoidRootPart")
                 if root then
                     local depthOffset = DEPTH_OFFSETS[InvisibleStatus.Mode] or 0.9588
@@ -768,14 +800,7 @@ Invisible.Toggle = function()
                 wait(1)
                 local newHumanoid = newChar:WaitForChild("Humanoid", 1)
                 if newHumanoid and InvisibleStatus.Running then
-                    InvisibleStatus.OldRoot = nil
-                    if InvisibleStatus.AnimTrack then
-                        InvisibleStatus.AnimTrack:Stop()
-                        InvisibleStatus.AnimTrack:Destroy()
-                        InvisibleStatus.AnimTrack = nil
-                    end
-                    if InvisibleStatus.Connection then InvisibleStatus.Connection:Disconnect() end
-                    revertClone()
+                    cleanupInvisible()
                     removeFolders()
                     Invisible.Toggle()
                 end
@@ -784,16 +809,10 @@ Invisible.Toggle = function()
             notify("Invisible", "Enabled with mode: " .. InvisibleStatus.Mode .. " (Depth: " .. DEPTH_OFFSETS[InvisibleStatus.Mode] .. ")", true)
         else
             InvisibleStatus.Running = false
+            cleanupInvisible()
             notify("Invisible", "Failed to enable invisibility!", true)
         end
     else
-        if InvisibleStatus.AnimTrack then
-            InvisibleStatus.AnimTrack:Stop()
-            InvisibleStatus.AnimTrack:Destroy()
-            InvisibleStatus.AnimTrack = nil
-        end
-        if InvisibleStatus.Connection then InvisibleStatus.Connection:Disconnect() end
-        if InvisibleStatus.CharacterConnection then InvisibleStatus.CharacterConnection:Disconnect() end
         revertClone()
         removeFolders()
         notify("Invisible", "Disabled", true)
@@ -898,7 +917,9 @@ local function SetupUI(UI)
         uiElements.SpeedMethod = UI.Sections.Speed:Dropdown({
             Name = "Method",
             Options = {"CFrame", "PulseTP"},
-            Default = LocalPlayer.Config.Speed.Method,
+            Default = Localگان
+
+Player.Config.Speed.Method,
             Callback = function(value)
                 Speed.SetMethod(value)
                 LocalPlayer.Config.Speed.Method = value
