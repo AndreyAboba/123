@@ -12,12 +12,12 @@ function Visuals.Init(UI, Core, notify)
         showFPS = true,
         showTime = true,
         updateInterval = 0.5,
-        gradientUpdateInterval = 0.2
+        gradientUpdateInterval = 0.1
     }
 
     local ESP = {
         Settings = {
-            Enabled = { Value = true, Default = true },
+            Enabled = { Value = true, Default = false },
             EnemyColor = { Value = Color3.fromRGB(255, 0, 0), Default = Color3.fromRGB(255, 0, 0) },
             FriendColor = { Value = Color3.fromRGB(0, 255, 0), Default = Color3.fromRGB(0, 255, 0) },
             TeamCheck = { Value = true, Default = true },
@@ -40,22 +40,13 @@ function Visuals.Init(UI, Core, notify)
         GuiElements = {},
         LastNotificationTime = 0,
         NotificationDelay = 5,
-        LastUpdateTimes = {}, -- Время последнего обновления для каждого игрока
-        CloseDistance = 50, -- Расстояние для 50 FPS
-        NearFPS = 50, -- FPS для близких игроков
-        FarFPS = 20 -- FPS для дальних игроков (изменено с 30 на 20)
+        CloseDistance = 50,
+        NearFPS = 50,
+        FarFPS = 20
     }
 
     local Cache = { TextBounds = {}, LastGradientUpdate = 0, PlayerCache = {} }
     local Elements = { Watermark = {} }
-
-    -- Тестовый квадрат для проверки рендеринга
-    local testSquare = Drawing.new("Square")
-    testSquare.Position = Vector2.new(100, 100)
-    testSquare.Size = Vector2.new(50, 50)
-    testSquare.Color = Color3.fromRGB(255, 255, 0)
-    testSquare.Filled = true
-    testSquare.Visible = true
 
     local buttonGui = Instance.new("ScreenGui")
     buttonGui.Name = "MenuToggleButtonGui"
@@ -322,21 +313,13 @@ function Visuals.Init(UI, Core, notify)
         end
 
         updateSizes()
-        elements.PlayerNameLabel:GetPropertyChangedSignal("TextBounds"):Connect(function()
-            Cache.TextBounds.PlayerName = elements.PlayerNameLabel.TextBounds.X
-            updateSizes()
-        end)
-        if elements.FPSLabel then
-            elements.FPSLabel:GetPropertyChangedSignal("TextBounds"):Connect(function()
-                Cache.TextBounds.FPS = elements.FPSLabel.TextBounds.X
-                updateSizes()
-            end)
-        end
-        if elements.TimeLabel then
-            elements.TimeLabel:GetPropertyChangedSignal("TextBounds"):Connect(function()
-                Cache.TextBounds.Time = elements.TimeLabel.TextBounds.X
-                updateSizes()
-            end)
+        for _, label in pairs({elements.PlayerNameLabel, elements.FPSLabel, elements.TimeLabel}) do
+            if label then
+                label:GetPropertyChangedSignal("TextBounds"):Connect(function()
+                    Cache.TextBounds[label.Name] = label.TextBounds.X
+                    updateSizes()
+                end)
+            end
         end
     end
 
@@ -436,6 +419,8 @@ function Visuals.Init(UI, Core, notify)
         test:Remove()
     end)
 
+    local lastUpdate = 0
+
     local function createESP(player)
         if ESP.Elements[player] then return end
 
@@ -453,8 +438,9 @@ function Visuals.Init(UI, Core, notify)
             },
             NameDrawing = Drawing.new("Text"),
             NameGui = nil,
+            LastPosition = nil,
             LastHealth = nil,
-            LastCharacter = nil
+            LastVisible = false
         }
 
         for _, line in pairs(esp.BoxLines) do
@@ -500,7 +486,6 @@ function Visuals.Init(UI, Core, notify)
 
         ESP.Elements[player] = esp
         Cache.PlayerCache[player] = { Character = nil, RootPart = nil, Humanoid = nil, Head = nil }
-        ESP.LastUpdateTimes[player] = 0
     end
 
     local function removeESP(player)
@@ -516,12 +501,10 @@ function Visuals.Init(UI, Core, notify)
         end
         ESP.Elements[player] = nil
         Cache.PlayerCache[player] = nil
-        ESP.LastUpdateTimes[player] = nil
     end
 
     local function updateESP()
         if not ESP.Settings.Enabled.Value then
-            -- При выключении ESP скрываем все элементы и прекращаем обновления
             for _, esp in pairs(ESP.Elements) do
                 for _, line in pairs(esp.BoxLines) do line.Visible = false end
                 esp.Filled.Visible = false
@@ -529,9 +512,15 @@ function Visuals.Init(UI, Core, notify)
                 esp.HealthBar.Foreground.Visible = false
                 esp.NameDrawing.Visible = false
                 if esp.NameGui then esp.NameGui.Visible = false end
+                esp.LastVisible = false
             end
             return
         end
+
+        local currentTime = tick()
+        local updateInterval = 1 / (currentTime - lastUpdate < ESP.CloseDistance and ESP.NearFPS or ESP.FarFPS)
+        if currentTime - lastUpdate < updateInterval then return end
+        lastUpdate = currentTime
 
         local camera = Core.PlayerData.Camera
         if not camera then return end
@@ -541,61 +530,55 @@ function Visuals.Init(UI, Core, notify)
         local localRootPart = localCharacter and localCharacter:FindFirstChild("HumanoidRootPart")
         if not localRootPart then return end
 
-        local currentTime = tick()
-        local players = Core.Services.Players:GetPlayers()
-
-        -- Проверяем, что все игроки добавлены в ESP.Elements
-        for _, player in pairs(players) do
+        for _, player in pairs(Core.Services.Players:GetPlayers()) do
             if player == localPlayer then continue end
+
             if not ESP.Elements[player] then
                 createESP(player)
             end
-        end
 
-        for player, esp in pairs(ESP.Elements) do
-            if not player.Parent then
-                removeESP(player)
-                continue
-            end
+            local esp = ESP.Elements[player]
+            if not esp then continue end
 
-            local cache = Cache.PlayerCache[player] or {}
-            local character = player.Character
-
-            -- Проверяем, изменился ли персонаж
-            if cache.Character ~= character then
-                cache.Character = character
-                cache.RootPart = character and character:FindFirstChild("HumanoidRootPart")
-                cache.Humanoid = character and character:FindFirstChild("Humanoid")
-                cache.Head = character and character:FindFirstChild("Head")
-                Cache.PlayerCache[player] = cache
+            local cache = Cache.PlayerCache[player]
+            if not cache.Character or cache.Character ~= player.Character then
+                cache.Character = player.Character
+                cache.RootPart = cache.Character and cache.Character:FindFirstChild("HumanoidRootPart")
+                cache.Humanoid = cache.Character and cache.Character:FindFirstChild("Humanoid")
+                cache.Head = cache.Character and cache.Character:FindFirstChild("Head")
             end
 
             local rootPart, humanoid, head = cache.RootPart, cache.Humanoid, cache.Head
-
-            -- Пропускаем, если нет персонажа или здоровья
-            if not character or not rootPart or not humanoid or humanoid.Health <= 0 then
+            if not rootPart or not humanoid or humanoid.Health <= 0 then
                 for _, line in pairs(esp.BoxLines) do line.Visible = false end
                 esp.Filled.Visible = false
                 esp.HealthBar.Background.Visible = false
                 esp.HealthBar.Foreground.Visible = false
                 esp.NameDrawing.Visible = false
                 if esp.NameGui then esp.NameGui.Visible = false end
+                esp.LastVisible = false
                 continue
             end
-
-            local distance = (rootPart.Position - localRootPart.Position).Magnitude
-            local updateInterval = distance <= ESP.CloseDistance and (1 / ESP.NearFPS) or (1 / ESP.FarFPS)
-
-            if currentTime - ESP.LastUpdateTimes[player] < updateInterval then
-                continue
-            end
-
-            ESP.LastUpdateTimes[player] = currentTime
 
             local rootPos, onScreen = camera:WorldToViewportPoint(rootPart.Position)
+            if not onScreen then
+                for _, line in pairs(esp.BoxLines) do line.Visible = false end
+                esp.Filled.Visible = false
+                esp.HealthBar.Background.Visible = false
+                esp.HealthBar.Foreground.Visible = false
+                esp.NameDrawing.Visible = false
+                if esp.NameGui then esp.NameGui.Visible = false end
+                esp.LastVisible = false
+                continue
+            end
+
+            esp.LastVisible = true
+            esp.LastPosition = rootPos
+            esp.LastHealth = humanoid.Health
+
             local headPos = head and camera:WorldToViewportPoint(head.Position + Vector3.new(0, head.Size.Y / 2 + 0.5, 0)) or camera:WorldToViewportPoint(rootPart.Position + Vector3.new(0, 2, 0))
             local lowestPoint = rootPart.Position.Y - 4
-            for _, part in pairs(character:GetChildren()) do
+            for _, part in pairs(cache.Character:GetChildren()) do
                 if part:IsA("BasePart") then
                     local bottomY = part.Position.Y - part.Size.Y / 2
                     if bottomY < lowestPoint then lowestPoint = bottomY end
@@ -603,9 +586,8 @@ function Visuals.Init(UI, Core, notify)
             end
             local feetPos = camera:WorldToViewportPoint(Vector3.new(rootPart.Position.X, lowestPoint, rootPart.Position.Z))
 
-            -- Стабильный расчёт размеров ESP
-            local height = math.max(10, math.min(200, math.abs(headPos.Y - feetPos.Y))) -- Ограничение от 10 до 200
-            local width = math.max(6, math.min(120, height * 0.6)) -- Ограничение ширины пропорционально высоте
+            local height = math.abs(headPos.Y - feetPos.Y)
+            local width = height * 0.6
 
             local isFriend = esp.LastIsFriend
             if esp.LastFriendsList ~= Core.Services.FriendsList or esp.LastIsFriend == nil then
@@ -750,25 +732,16 @@ function Visuals.Init(UI, Core, notify)
         end
     end
 
-    -- Инициализация всех текущих игроков
-    local players = Core.Services.Players:GetPlayers()
-    for _, player in pairs(players) do
-        if player ~= Core.PlayerData.LocalPlayer then
-            createESP(player)
-        end
+    task.wait(1)
+    for _, player in pairs(Core.Services.Players:GetPlayers()) do
+        if player ~= Core.PlayerData.LocalPlayer then createESP(player) end
     end
 
-    -- Добавляем обработчик для новых игроков
     Core.Services.Players.PlayerAdded:Connect(function(player)
-        if player ~= Core.PlayerData.LocalPlayer then
-            createESP(player)
-        end
+        if player ~= Core.PlayerData.LocalPlayer then createESP(player) end
     end)
 
-    -- Обработчик для игроков, покинувших игру
     Core.Services.Players.PlayerRemoving:Connect(removeESP)
-
-    -- Подключаем обновление ESP
     Core.Services.RunService.RenderStepped:Connect(updateESP)
 
     if UI.Tabs and UI.Tabs.Visuals then
