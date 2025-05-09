@@ -20,6 +20,7 @@ local GunSilent = {
         LastTool = nil,
         TargetVisualPart = nil,
         FovCircle = nil,
+        AimBeam = nil,
         Connection = nil,
         OldFireServer = nil,
         LocalCharacter = nil,
@@ -105,12 +106,12 @@ local function getNearestPlayerGun(gunRange)
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= Players.LocalPlayer then
             local targetChar = player.Character
-            if targetChar then
-                local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
-                local targetHumanoid = targetChar:FindFirstChild("Humanoid")
-                if targetRoot and targetHumanoid and targetHumanoid.Health > 0 then
+            if targetChar and targetChar:FindFirstChild("HumanoidRootPart") and targetChar:FindFirstChild("Humanoid") then
+                local targetRoot = targetChar.HumanoidRootPart
+                local targetHumanoid = targetChar.Humanoid
+                if targetHumanoid.Health > 0 and isInFov(targetRoot.Position, camera) then
                     local distance = (rootPos - targetRoot.Position).Magnitude
-                    if distance <= shortestDistance and isInFov(targetRoot.Position, camera) then
+                    if distance <= shortestDistance then
                         shortestDistance = distance
                         nearestPlayer = player
                     end
@@ -141,31 +142,58 @@ end
 
 local function updateVisualsGun(target, hasWeapon)
     local localRoot = GunSilent.State.LocalRoot
-    if not GunSilent.Settings.Enabled.Value or not hasWeapon or not target or not target.Character or not localRoot then
+    if not GunSilent.Settings.Enabled.Value or not hasWeapon or not localRoot then
         if GunSilent.State.TargetVisualPart then GunSilent.State.TargetVisualPart.Transparency = 1 end
+        if GunSilent.State.AimBeam then GunSilent.State.AimBeam.Enabled = false end
         return
     end
 
-    local targetChar = target.Character
-    local targetHead = targetChar:FindFirstChild("Head") or targetChar:FindFirstChild("HumanoidRootPart")
-    if not targetHead then return end
-
-    if GunSilent.Settings.TargetVisual.Value then
-        local targetVisualPart = GunSilent.State.TargetVisualPart
-        if not targetVisualPart then
-            targetVisualPart = Instance.new("Part")
-            targetVisualPart.Size = Vector3.new(1, 1, 1)
-            targetVisualPart.Shape = Enum.PartType.Ball
-            targetVisualPart.Anchored = true
-            targetVisualPart.CanCollide = false
-            targetVisualPart.Color = Color3.fromRGB(255, 0, 0)
-            targetVisualPart.Parent = Workspace
-            GunSilent.State.TargetVisualPart = targetVisualPart
+    local targetChar = target and target.Character
+    if GunSilent.Settings.TargetVisual.Value and targetChar then
+        local targetHead = targetChar:FindFirstChild("Head") or targetChar:FindFirstChild("HumanoidRootPart")
+        if targetHead then
+            local targetVisualPart = GunSilent.State.TargetVisualPart
+            if not targetVisualPart then
+                targetVisualPart = Instance.new("Part")
+                targetVisualPart.Size = Vector3.new(1, 1, 1)
+                targetVisualPart.Shape = Enum.PartType.Ball
+                targetVisualPart.Anchored = true
+                targetVisualPart.CanCollide = false
+                targetVisualPart.Color = Color3.fromRGB(255, 0, 0)
+                targetVisualPart.Parent = Workspace
+                GunSilent.State.TargetVisualPart = targetVisualPart
+            end
+            targetVisualPart.Position = targetHead.Position + Vector3.new(0, 3, 0)
+            targetVisualPart.Transparency = 0.5
         end
-        targetVisualPart.Position = targetHead.Position + Vector3.new(0, 3, 0)
-        targetVisualPart.Transparency = 0.5
     elseif GunSilent.State.TargetVisualPart then
         GunSilent.State.TargetVisualPart.Transparency = 1
+    end
+
+    if targetChar then
+        local hitPart = targetChar:FindFirstChild(GunSilent.Settings.HitPart.Value) or targetChar:FindFirstChild("HumanoidRootPart")
+        if hitPart then
+            local aimBeam = GunSilent.State.AimBeam
+            if not aimBeam then
+                aimBeam = Instance.new("Beam")
+                aimBeam.FaceCamera = true
+                aimBeam.Width0 = 0.2
+                aimBeam.Width1 = 0.2
+                aimBeam.Transparency = NumberSequence.new(0.5)
+                aimBeam.Color = ColorSequence.new(Color3.fromRGB(0, 255, 0))
+                local attachment0 = Instance.new("Attachment")
+                local attachment1 = Instance.new("Attachment")
+                aimBeam.Attachment0 = attachment0
+                aimBeam.Attachment1 = attachment1
+                aimBeam.Parent = Workspace
+                GunSilent.State.AimBeam = aimBeam
+            end
+            attachment0.Parent = localRoot
+            attachment1.Parent = hitPart
+            aimBeam.Enabled = true
+        end
+    elseif GunSilent.State.AimBeam then
+        GunSilent.State.AimBeam.Enabled = false
     end
 end
 
@@ -175,7 +203,6 @@ local function initializeGunSilent()
     if not GunSilent.State.OldFireServer then
         GunSilent.State.OldFireServer = hookfunction(game:GetService("ReplicatedStorage").Remotes.Send.FireServer, function(self, ...)
             local args = {...}
-            local modifiedArgs = args
             if GunSilent.Settings.Enabled.Value and #args >= 2 and typeof(args[1]) == "number" and math.random(100) <= GunSilent.Settings.HitChance.Value then
                 GunSilent.State.LastEventId = args[1]
                 local equippedTool = getEquippedGunTool(GunSilent.State.LocalCharacter)
@@ -186,22 +213,27 @@ local function initializeGunSilent()
                         local aimCFrame = getAimCFrameGun(nearestPlayer)
                         local hitData = createHitDataGun(nearestPlayer)
                         if aimCFrame and hitData then
-                            modifiedArgs = {args[1], args[2], equippedTool, aimCFrame, hitData}
+                            return GunSilent.State.OldFireServer(self, GunSilent.State.LastEventId, "shoot_gun", equippedTool, aimCFrame, hitData)
                         end
                     end
                 end
             end
-            return GunSilent.State.OldFireServer(self, unpack(modifiedArgs))
+            return GunSilent.State.OldFireServer(self, unpack(args))
         end)
     end
 
     GunSilent.State.Connection = RunService.Heartbeat:Connect(function(deltaTime)
         if not GunSilent.Settings.Enabled.Value then
             if GunSilent.State.FovCircle then GunSilent.State.FovCircle.Visible = false end
+            updateVisualsGun(nil, false)
             return
         end
 
         local character = GunSilent.State.LocalCharacter
+        if not character or not character:FindFirstChild("HumanoidRootPart") then
+            return
+        end
+
         local currentTool = getEquippedGunTool(character)
         if currentTool ~= GunSilent.State.LastTool then
             if currentTool and not GunSilent.State.LastTool then
