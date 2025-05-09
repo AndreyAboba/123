@@ -15,7 +15,6 @@ local GunSilent = {
         SortMethod = { Value = "Mouse&Distance", Default = "Mouse&Distance" },
         TargetVisual = { Value = true, Default = true },
         HitboxVisual = { Value = true, Default = true },
-        ShowDirection = { Value = true, Default = true },
         HitChance = { Value = 100, Default = 100 }
     },
     State = {
@@ -23,8 +22,6 @@ local GunSilent = {
         LastTool = nil,
         TargetVisualPart = nil,
         HitboxVisualPart = nil,
-        DirectionVisualPart = nil,
-        RealDirectionVisualPart = nil,
         FovCircle = nil,
         Connection = nil,
         OldFireServer = nil,
@@ -149,7 +146,8 @@ local function getAimCFrameGun(target)
     local targetChar = target.Character
     local hitPart = targetChar:FindFirstChild(GunSilent.Settings.HitPart.Value) or targetChar:FindFirstChild("HumanoidRootPart")
     if not hitPart then return nil end
-    return CFrame.new(localRoot.Position, hitPart.Position)
+    local targetPos = hitPart.Position
+    return CFrame.new(localRoot.Position, targetPos)
 end
 
 local function createHitDataGun(target)
@@ -158,8 +156,9 @@ local function createHitDataGun(target)
     local targetChar = target.Character
     local hitPart = targetChar:FindFirstChild(GunSilent.Settings.HitPart.Value) or targetChar:FindFirstChild("HumanoidRootPart")
     if not hitPart then return nil end
-    local direction = (hitPart.Position - localRoot.Position).Unit
-    return {{Normal = direction, Instance = hitPart, Position = hitPart.Position}}
+    local targetPos = hitPart.Position
+    local direction = (targetPos - localRoot.Position).Unit
+    return {{Normal = direction, Instance = hitPart, Position = targetPos}}
 end
 
 local function updateVisualsGun(target, hasWeapon)
@@ -167,8 +166,6 @@ local function updateVisualsGun(target, hasWeapon)
     if not GunSilent.Settings.Enabled.Value or not hasWeapon or not target or not target.Character or not localRoot then
         if GunSilent.State.TargetVisualPart then GunSilent.State.TargetVisualPart.Transparency = 1 end
         if GunSilent.State.HitboxVisualPart then GunSilent.State.HitboxVisualPart.Transparency = 1 end
-        if GunSilent.State.DirectionVisualPart then GunSilent.State.DirectionVisualPart.Transparency = 1 end
-        if GunSilent.State.RealDirectionVisualPart then GunSilent.State.RealDirectionVisualPart.Transparency = 1 end
         return
     end
 
@@ -210,39 +207,6 @@ local function updateVisualsGun(target, hasWeapon)
         hitboxVisualPart.Transparency = 0.7
     elseif GunSilent.State.HitboxVisualPart then
         GunSilent.State.HitboxVisualPart.Transparency = 1
-    end
-
-    if GunSilent.Settings.ShowDirection.Value then
-        local directionVisualPart = GunSilent.State.DirectionVisualPart
-        if not directionVisualPart then
-            directionVisualPart = Instance.new("Part")
-            directionVisualPart.Size = Vector3.new(0.2, 0.2, 5)
-            directionVisualPart.Anchored = true
-            directionVisualPart.CanCollide = false
-            directionVisualPart.Color = Color3.fromRGB(255, 215, 0)
-            directionVisualPart.Parent = Workspace
-            GunSilent.State.DirectionVisualPart = directionVisualPart
-        end
-        local realDirectionVisualPart = GunSilent.State.RealDirectionVisualPart
-        if not realDirectionVisualPart then
-            realDirectionVisualPart = Instance.new("Part")
-            realDirectionVisualPart.Size = Vector3.new(0.2, 0.2, 5)
-            realDirectionVisualPart.Anchored = true
-            realDirectionVisualPart.CanCollide = false
-            realDirectionVisualPart.Color = Color3.fromRGB(255, 255, 255)
-            realDirectionVisualPart.Parent = Workspace
-            GunSilent.State.RealDirectionVisualPart = realDirectionVisualPart
-        end
-        local direction = (hitPart.Position - localRoot.Position).Unit
-        directionVisualPart.CFrame = CFrame.lookAt(localRoot.Position + Vector3.new(0, 1.5, 0), localRoot.Position + Vector3.new(0, 1.5, 0) + direction * 5)
-        directionVisualPart.Position = localRoot.Position + Vector3.new(0, 1.5, 0) + direction * 2.5
-        directionVisualPart.Transparency = 0.5
-        realDirectionVisualPart.CFrame = CFrame.lookAt(localRoot.Position + Vector3.new(0, 1.5, 0), localRoot.Position + Vector3.new(0, 1.5, 0) + direction * 5)
-        realDirectionVisualPart.Position = localRoot.Position + Vector3.new(0, 1.5, 0) + direction * 2.5
-        realDirectionVisualPart.Transparency = 0.5
-    elseif GunSilent.State.DirectionVisualPart then
-        GunSilent.State.DirectionVisualPart.Transparency = 1
-        GunSilent.State.RealDirectionVisualPart.Transparency = 1
     end
 end
 
@@ -400,13 +364,6 @@ local function Init(UI, Core, notify)
                 Default = GunSilent.Settings.HitboxVisual.Value,
                 Callback = function(value)
                     GunSilent.Settings.HitboxVisual.Value = value
-                end
-            })
-            UI.Sections.GunSilent:Toggle({
-                Name = "Show Direction",
-                Default = GunSilent.Settings.ShowDirection.Value,
-                Callback = function(value)
-                    GunSilent.Settings.ShowDirection.Value = value
                 end
             })
             UI.Sections.GunSilent:Slider({
