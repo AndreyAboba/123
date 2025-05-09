@@ -24,7 +24,10 @@ local GunSilent = {
         Connection = nil,
         OldFireServer = nil,
         LocalCharacter = nil,
-        LocalRoot = nil
+        LocalRoot = nil,
+        LastTarget = nil,
+        LastNotifyTime = 0,
+        NotifyCooldown = 1 -- Задержка в секундах между уведомлениями
     }
 }
 
@@ -102,6 +105,7 @@ local function getNearestPlayerGun(gunRange)
     local rootPos = localRoot.Position
     local camera = Workspace.CurrentCamera
     local nearestPlayer, shortestDistance = nil, gunRange
+    local currentTime = tick()
 
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= Players.LocalPlayer then
@@ -114,7 +118,11 @@ local function getNearestPlayerGun(gunRange)
                     if distance <= shortestDistance then
                         shortestDistance = distance
                         nearestPlayer = player
-                        GunSilent.notify("GunSilent", "Target selected: " .. player.Name .. " at distance: " .. math.floor(distance), true)
+                        if nearestPlayer ~= GunSilent.State.LastTarget and currentTime - GunSilent.State.LastNotifyTime >= GunSilent.State.NotifyCooldown then
+                            GunSilent.notify("GunSilent", "Target selected: " .. player.Name .. " at distance: " .. math.floor(distance), true)
+                            GunSilent.State.LastNotifyTime = currentTime
+                            GunSilent.State.LastTarget = nearestPlayer
+                        end
                     end
                 end
             end
@@ -140,7 +148,7 @@ local function createHitDataGun(target)
     local hitPart = targetChar:FindFirstChild(GunSilent.Settings.HitPart.Value) or targetChar:FindFirstChild("HumanoidRootPart")
     if not hitPart then return nil end
     local direction = (hitPart.Position - localRoot.Position).Unit
-    return {{Normal = direction, Instance = hitPart, Position = hitPart.Position}}
+    return {{Normal = direction, Instance = hitPart, Position = hitPart.Position, Material = Enum.Material.Plastic}}
 end
 
 local function updateVisualsGun(target, hasWeapon)
@@ -206,27 +214,35 @@ local function initializeGunSilent()
     if not GunSilent.State.OldFireServer then
         GunSilent.State.OldFireServer = hookfunction(game:GetService("ReplicatedStorage").Remotes.Send.FireServer, function(self, ...)
             local args = {...}
-            if GunSilent.Settings.Enabled.Value and #args >= 2 and typeof(args[1]) == "number" and args[2] == "shoot_gun" and math.random(100) <= GunSilent.Settings.HitChance.Value then
+            if #args < 2 then
+                GunSilent.notify("GunSilent", "FireServer called with insufficient args: " .. tostring(#args), true)
+                return GunSilent.State.OldFireServer(self, unpack(args))
+            end
+
+            if GunSilent.Settings.Enabled.Value and typeof(args[1]) == "number" and args[2] == "shoot_gun" and math.random(100) <= GunSilent.Settings.HitChance.Value then
                 GunSilent.State.LastEventId = args[1]
                 local equippedTool = getEquippedGunTool(GunSilent.State.LocalCharacter)
-                if equippedTool then
-                    local gunRange = getGunRange(equippedTool)
-                    local nearestPlayer = getNearestPlayerGun(gunRange)
-                    if nearestPlayer then
-                        local aimCFrame = getAimCFrameGun(nearestPlayer)
-                        local hitData = createHitDataGun(nearestPlayer)
-                        if aimCFrame and hitData then
-                            GunSilent.notify("GunSilent", "Firing at target: " .. nearestPlayer.Name, true)
-                            return GunSilent.State.OldFireServer(self, GunSilent.State.LastEventId, "shoot_gun", equippedTool, aimCFrame, hitData)
-                        else
-                            GunSilent.notify("GunSilent", "Failed to generate aim data", true)
-                        end
-                    else
-                        GunSilent.notify("GunSilent", "No target found within range", true)
-                    end
-                else
-                    GunSilent.notify("GunSilent", "No equipped gun tool found", true)
+                if not equippedTool then
+                    GunSilent.notify("GunSilent", "No equipped gun tool found during FireServer", true)
+                    return GunSilent.State.OldFireServer(self, unpack(args))
                 end
+
+                local gunRange = getGunRange(equippedTool)
+                local nearestPlayer = getNearestPlayerGun(gunRange)
+                if not nearestPlayer then
+                    GunSilent.notify("GunSilent", "No target found within range during FireServer", true)
+                    return GunSilent.State.OldFireServer(self, unpack(args))
+                end
+
+                local aimCFrame = getAimCFrameGun(nearestPlayer)
+                local hitData = createHitDataGun(nearestPlayer)
+                if not aimCFrame or not hitData then
+                    GunSilent.notify("GunSilent", "Failed to generate aim data during FireServer", true)
+                    return GunSilent.State.OldFireServer(self, unpack(args))
+                end
+
+                GunSilent.notify("GunSilent", "Firing at target: " .. nearestPlayer.Name .. " with event ID: " .. tostring(GunSilent.State.LastEventId), true)
+                return GunSilent.State.OldFireServer(self, GunSilent.State.LastEventId, "shoot_gun", equippedTool, aimCFrame, hitData)
             end
             return GunSilent.State.OldFireServer(self, unpack(args))
         end)
