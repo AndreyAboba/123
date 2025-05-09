@@ -4,7 +4,7 @@ local Aimbot = {}
 local Settings = {
     FOV = 100, -- Поле зрения
     ShowFOV = true, -- Показывать круг FOV
-    Hitbox = "Head", -- Хитбокс: "Head", "HumanoidRootPart"
+    Hitbox = "Head", -- Хитбокс: "Head", "UpperTorso"
     Smoothness = 0.2, -- Плавность (0 - мгновенно, 1 - плавно)
     Enabled = false -- Состояние аимбота
 }
@@ -107,7 +107,7 @@ function Aimbot.Init(UI, Core, notify)
     }, "AimbotFOV")
     CombatSection:Dropdown({
         Name = "Hitbox",
-        Options = { "Head", "HumanoidRootPart" },
+        Options = { "Head", "UpperTorso" },
         Default = Settings.Hitbox,
         Callback = function(value)
             Settings.Hitbox = value
