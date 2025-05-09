@@ -71,8 +71,7 @@ function Aimbot.Init(UI, Core, notify)
                 local Hitbox = Target.Character[Settings.Hitbox]
                 local TargetPosition = Hitbox.Position
                 local LookVector = (TargetPosition - Camera.CFrame.Position).Unit
-                local SmoothLookVector = Camera.CFrame.LookVector:Lerp(LookVector, 1 - Settings.Smoothness)
-                Camera.CFrame = CFrame.new(Camera.CFrame.Position, Camera.CFrame.Position + SmoothLookVector)
+                Camera.CFrame = CFrame.new(Camera.CFrame.Position, Camera.CFrame.Position + LookVector)
             end
         end
     end)
@@ -121,7 +120,7 @@ function Aimbot.Init(UI, Core, notify)
         Default = Settings.Smoothness,
         Callback = function(value)
             Settings.Smoothness = value
-        }
+        end
     }, "AimbotSmoothness")
 
     -- Кнопка на экране
