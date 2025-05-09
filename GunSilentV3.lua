@@ -1,33 +1,36 @@
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
 
 local GunSilent = {
     Settings = {
         Enabled = { Value = false, Default = false },
         RangePlus = { Value = 50, Default = 50 },
+        Rage = { Value = false, Default = false },
         HitPart = { Value = "Head", Default = "Head" },
         UseFOV = { Value = true, Default = true },
         FOV = { Value = 120, Default = 120 },
         ShowCircle = { Value = true, Default = true },
         CircleMethod = { Value = "Cursor", Default = "Cursor" },
+        SortMethod = { Value = "Mouse&Distance", Default = "Mouse&Distance" },
         TargetVisual = { Value = true, Default = true },
-        HitChance = { Value = 100, Default = 100 }
+        HitboxVisual = { Value = true, Default = true },
+        ShowDirection = { Value = true, Default = true },
+        HitChance = { Value = 100, Default = 100 },
+        DoubleTap = { Value = false, Default = false }
     },
     State = {
         LastEventId = 0,
         LastTool = nil,
         TargetVisualPart = nil,
+        HitboxVisualPart = nil,
+        DirectionVisualPart = nil,
+        RealDirectionVisualPart = nil,
         FovCircle = nil,
-        AimBeam = nil,
         Connection = nil,
         OldFireServer = nil,
         LocalCharacter = nil,
-        LocalRoot = nil,
-        LastTarget = nil,
-        LastNotifyTime = 0,
-        NotifyCooldown = 1 -- Задержка в секундах между уведомлениями
+        LocalRoot = nil
     }
 }
 
@@ -104,8 +107,8 @@ local function getNearestPlayerGun(gunRange)
     if not localRoot then return nil end
     local rootPos = localRoot.Position
     local camera = Workspace.CurrentCamera
-    local nearestPlayer, shortestDistance = nil, gunRange
-    local currentTime = tick()
+    local nearestPlayer, shortestDistance, bestScore = nil, gunRange, math.huge
+    local sortMethod = GunSilent.Settings.SortMethod.Value
 
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= Players.LocalPlayer then
@@ -115,13 +118,23 @@ local function getNearestPlayerGun(gunRange)
                 local targetHumanoid = targetChar.Humanoid
                 if targetHumanoid.Health > 0 and isInFov(targetRoot.Position, camera) then
                     local distance = (rootPos - targetRoot.Position).Magnitude
-                    if distance <= shortestDistance then
+                    if sortMethod == "Mouse&Distance" then
+                        local screenPos = camera:WorldToViewportPoint(targetRoot.Position)
+                        local cursorDistance = (Vector2.new(screenPos.X, screenPos.Y) - UserInputService:GetMouseLocation()).Magnitude
+                        local score = (distance / (GunSilent.Settings.RangePlus.Value + 50)) + (cursorDistance / camera.ViewportSize.X)
+                        if score < bestScore then
+                            bestScore = score
+                            nearestPlayer = player
+                        end
+                    elseif sortMethod == "Distance" and distance < shortestDistance then
                         shortestDistance = distance
                         nearestPlayer = player
-                        if nearestPlayer ~= GunSilent.State.LastTarget and currentTime - GunSilent.State.LastNotifyTime >= GunSilent.State.NotifyCooldown then
-                            GunSilent.notify("GunSilent", "Target selected: " .. player.Name .. " at distance: " .. math.floor(distance), true)
-                            GunSilent.State.LastNotifyTime = currentTime
-                            GunSilent.State.LastTarget = nearestPlayer
+                    elseif sortMethod == "Mouse" then
+                        local screenPos = camera:WorldToViewportPoint(targetRoot.Position)
+                        local cursorDistance = (Vector2.new(screenPos.X, screenPos.Y) - UserInputService:GetMouseLocation()).Magnitude
+                        if cursorDistance < bestScore then
+                            bestScore = cursorDistance
+                            nearestPlayer = player
                         end
                     end
                 end
@@ -137,8 +150,7 @@ local function getAimCFrameGun(target)
     local targetChar = target.Character
     local hitPart = targetChar:FindFirstChild(GunSilent.Settings.HitPart.Value) or targetChar:FindFirstChild("HumanoidRootPart")
     if not hitPart then return nil end
-    local aimPos = hitPart.Position
-    return CFrame.new(localRoot.Position, aimPos)
+    return CFrame.new(localRoot.Position, hitPart.Position)
 end
 
 local function createHitDataGun(target)
@@ -148,63 +160,90 @@ local function createHitDataGun(target)
     local hitPart = targetChar:FindFirstChild(GunSilent.Settings.HitPart.Value) or targetChar:FindFirstChild("HumanoidRootPart")
     if not hitPart then return nil end
     local direction = (hitPart.Position - localRoot.Position).Unit
-    return {{Normal = direction, Instance = hitPart, Position = hitPart.Position, Material = Enum.Material.Plastic}}
+    return {{Normal = direction, Instance = hitPart, Position = hitPart.Position}}
 end
 
 local function updateVisualsGun(target, hasWeapon)
     local localRoot = GunSilent.State.LocalRoot
-    if not GunSilent.Settings.Enabled.Value or not hasWeapon or not localRoot then
+    if not GunSilent.Settings.Enabled.Value or not hasWeapon or not target or not target.Character or not localRoot then
         if GunSilent.State.TargetVisualPart then GunSilent.State.TargetVisualPart.Transparency = 1 end
-        if GunSilent.State.AimBeam then GunSilent.State.AimBeam.Enabled = false end
+        if GunSilent.State.HitboxVisualPart then GunSilent.State.HitboxVisualPart.Transparency = 1 end
+        if GunSilent.State.DirectionVisualPart then GunSilent.State.DirectionVisualPart.Transparency = 1 end
+        if GunSilent.State.RealDirectionVisualPart then GunSilent.State.RealDirectionVisualPart.Transparency = 1 end
         return
     end
 
-    local targetChar = target and target.Character
-    if GunSilent.Settings.TargetVisual.Value and targetChar then
-        local targetHead = targetChar:FindFirstChild("Head") or targetChar:FindFirstChild("HumanoidRootPart")
-        if targetHead then
-            local targetVisualPart = GunSilent.State.TargetVisualPart
-            if not targetVisualPart then
-                targetVisualPart = Instance.new("Part")
-                targetVisualPart.Size = Vector3.new(1, 1, 1)
-                targetVisualPart.Shape = Enum.PartType.Ball
-                targetVisualPart.Anchored = true
-                targetVisualPart.CanCollide = false
-                targetVisualPart.Color = Color3.fromRGB(255, 0, 0)
-                targetVisualPart.Parent = Workspace
-                GunSilent.State.TargetVisualPart = targetVisualPart
-            end
-            targetVisualPart.Position = targetHead.Position + Vector3.new(0, 3, 0)
-            targetVisualPart.Transparency = 0.5
+    local targetChar = target.Character
+    local targetHead = targetChar:FindFirstChild("Head") or targetChar:FindFirstChild("HumanoidRootPart")
+    local hitPart = targetChar:FindFirstChild(GunSilent.Settings.HitPart.Value) or targetChar:FindFirstChild("HumanoidRootPart")
+    if not targetHead or not hitPart then return end
+
+    if GunSilent.Settings.TargetVisual.Value then
+        local targetVisualPart = GunSilent.State.TargetVisualPart
+        if not targetVisualPart then
+            targetVisualPart = Instance.new("Part")
+            targetVisualPart.Size = Vector3.new(1, 1, 1)
+            targetVisualPart.Shape = Enum.PartType.Ball
+            targetVisualPart.Anchored = true
+            targetVisualPart.CanCollide = false
+            targetVisualPart.Color = Color3.fromRGB(255, 0, 0)
+            targetVisualPart.Parent = Workspace
+            GunSilent.State.TargetVisualPart = targetVisualPart
         end
+        targetVisualPart.Position = targetHead.Position + Vector3.new(0, 3, 0)
+        targetVisualPart.Transparency = 0.5
     elseif GunSilent.State.TargetVisualPart then
         GunSilent.State.TargetVisualPart.Transparency = 1
     end
 
-    if targetChar then
-        local hitPart = targetChar:FindFirstChild(GunSilent.Settings.HitPart.Value) or targetChar:FindFirstChild("HumanoidRootPart")
-        if hitPart then
-            local aimBeam = GunSilent.State.AimBeam
-            if not aimBeam then
-                aimBeam = Instance.new("Beam")
-                aimBeam.FaceCamera = true
-                aimBeam.Width0 = 0.2
-                aimBeam.Width1 = 0.2
-                aimBeam.Transparency = NumberSequence.new(0.5)
-                aimBeam.Color = ColorSequence.new(Color3.fromRGB(0, 255, 0))
-                local attachment0 = Instance.new("Attachment")
-                local attachment1 = Instance.new("Attachment")
-                aimBeam.Attachment0 = attachment0
-                aimBeam.Attachment1 = attachment1
-                aimBeam.Parent = Workspace
-                GunSilent.State.AimBeam = aimBeam
-            end
-            aimBeam.Attachment0.Parent = localRoot
-            aimBeam.Attachment1.Parent = hitPart
-            aimBeam.Enabled = true
+    if GunSilent.Settings.HitboxVisual.Value then
+        local hitboxVisualPart = GunSilent.State.HitboxVisualPart
+        if not hitboxVisualPart then
+            hitboxVisualPart = Instance.new("Part")
+            hitboxVisualPart.Anchored = true
+            hitboxVisualPart.CanCollide = false
+            hitboxVisualPart.Color = Color3.fromRGB(0, 255, 0)
+            hitboxVisualPart.Parent = Workspace
+            GunSilent.State.HitboxVisualPart = hitboxVisualPart
         end
-    elseif GunSilent.State.AimBeam then
-        GunSilent.State.AimBeam.Enabled = false
+        hitboxVisualPart.Size = hitPart.Size + Vector3.new(0.2, 0.2, 0.2)
+        hitboxVisualPart.CFrame = hitPart.CFrame
+        hitboxVisualPart.Transparency = 0.7
+    elseif GunSilent.State.HitboxVisualPart then
+        GunSilent.State.HitboxVisualPart.Transparency = 1
+    end
+
+    if GunSilent.Settings.ShowDirection.Value then
+        local directionVisualPart = GunSilent.State.DirectionVisualPart
+        if not directionVisualPart then
+            directionVisualPart = Instance.new("Part")
+            directionVisualPart.Size = Vector3.new(0.2, 0.2, 5)
+            directionVisualPart.Anchored = true
+            directionVisualPart.CanCollide = false
+            directionVisualPart.Color = Color3.fromRGB(255, 215, 0)
+            directionVisualPart.Parent = Workspace
+            GunSilent.State.DirectionVisualPart = directionVisualPart
+        end
+        local realDirectionVisualPart = GunSilent.State.RealDirectionVisualPart
+        if not realDirectionVisualPart then
+            realDirectionVisualPart = Instance.new("Part")
+            realDirectionVisualPart.Size = Vector3.new(0.2, 0.2, 5)
+            realDirectionVisualPart.Anchored = true
+            realDirectionVisualPart.CanCollide = false
+            realDirectionVisualPart.Color = Color3.fromRGB(255, 255, 255)
+            realDirectionVisualPart.Parent = Workspace
+            GunSilent.State.RealDirectionVisualPart = realDirectionVisualPart
+        end
+        local direction = (hitPart.Position - localRoot.Position).Unit
+        directionVisualPart.CFrame = CFrame.lookAt(localRoot.Position + Vector3.new(0, 1.5, 0), localRoot.Position + Vector3.new(0, 1.5, 0) + direction * 5)
+        directionVisualPart.Position = localRoot.Position + Vector3.new(0, 1.5, 0) + direction * 2.5
+        directionVisualPart.Transparency = 0.5
+        realDirectionVisualPart.CFrame = CFrame.lookAt(localRoot.Position + Vector3.new(0, 1.5, 0), localRoot.Position + Vector3.new(0, 1.5, 0) + direction * 5)
+        realDirectionVisualPart.Position = localRoot.Position + Vector3.new(0, 1.5, 0) + direction * 2.5
+        realDirectionVisualPart.Transparency = 0.5
+    elseif GunSilent.State.DirectionVisualPart then
+        GunSilent.State.DirectionVisualPart.Transparency = 1
+        GunSilent.State.RealDirectionVisualPart.Transparency = 1
     end
 end
 
@@ -214,35 +253,20 @@ local function initializeGunSilent()
     if not GunSilent.State.OldFireServer then
         GunSilent.State.OldFireServer = hookfunction(game:GetService("ReplicatedStorage").Remotes.Send.FireServer, function(self, ...)
             local args = {...}
-            if #args < 2 then
-                GunSilent.notify("GunSilent", "FireServer called with insufficient args: " .. tostring(#args), true)
-                return GunSilent.State.OldFireServer(self, unpack(args))
-            end
-
-            if GunSilent.Settings.Enabled.Value and typeof(args[1]) == "number" and args[2] == "shoot_gun" and math.random(100) <= GunSilent.Settings.HitChance.Value then
+            if GunSilent.Settings.Enabled.Value and #args >= 2 and typeof(args[1]) == "number" and args[2] == "shoot_gun" and math.random(100) <= GunSilent.Settings.HitChance.Value then
                 GunSilent.State.LastEventId = args[1]
                 local equippedTool = getEquippedGunTool(GunSilent.State.LocalCharacter)
-                if not equippedTool then
-                    GunSilent.notify("GunSilent", "No equipped gun tool found during FireServer", true)
-                    return GunSilent.State.OldFireServer(self, unpack(args))
+                if equippedTool then
+                    local gunRange = getGunRange(equippedTool)
+                    local nearestPlayer = getNearestPlayerGun(gunRange)
+                    if nearestPlayer then
+                        local aimCFrame = getAimCFrameGun(nearestPlayer)
+                        local hitData = createHitDataGun(nearestPlayer)
+                        if aimCFrame and hitData then
+                            return GunSilent.State.OldFireServer(self, GunSilent.State.LastEventId, "shoot_gun", equippedTool, aimCFrame, hitData)
+                        end
+                    end
                 end
-
-                local gunRange = getGunRange(equippedTool)
-                local nearestPlayer = getNearestPlayerGun(gunRange)
-                if not nearestPlayer then
-                    GunSilent.notify("GunSilent", "No target found within range during FireServer", true)
-                    return GunSilent.State.OldFireServer(self, unpack(args))
-                end
-
-                local aimCFrame = getAimCFrameGun(nearestPlayer)
-                local hitData = createHitDataGun(nearestPlayer)
-                if not aimCFrame or not hitData then
-                    GunSilent.notify("GunSilent", "Failed to generate aim data during FireServer", true)
-                    return GunSilent.State.OldFireServer(self, unpack(args))
-                end
-
-                GunSilent.notify("GunSilent", "Firing at target: " .. nearestPlayer.Name .. " with event ID: " .. tostring(GunSilent.State.LastEventId), true)
-                return GunSilent.State.OldFireServer(self, GunSilent.State.LastEventId, "shoot_gun", equippedTool, aimCFrame, hitData)
             end
             return GunSilent.State.OldFireServer(self, unpack(args))
         end)
@@ -257,19 +281,11 @@ local function initializeGunSilent()
 
         local character = GunSilent.State.LocalCharacter
         if not character or not character:FindFirstChild("HumanoidRootPart") then
-            GunSilent.notify("GunSilent", "Local character or root part not found", true)
             return
         end
 
         local currentTool = getEquippedGunTool(character)
         if currentTool ~= GunSilent.State.LastTool then
-            if currentTool and not GunSilent.State.LastTool then
-                GunSilent.notify("GunSilent", "Equipped: " .. currentTool.Name .. " (Total Range: " .. getGunRange(currentTool) .. ")", true)
-            elseif GunSilent.State.LastTool and not currentTool then
-                GunSilent.notify("GunSilent", "Unequipped: " .. GunSilent.State.LastTool.Name, true)
-            elseif currentTool and GunSilent.State.LastTool then
-                GunSilent.notify("GunSilent", "Switched to " .. currentTool.Name .. " (Range: " .. getGunRange(currentTool) .. ")", true)
-            end
             GunSilent.State.LastTool = currentTool
         end
 
@@ -282,6 +298,13 @@ local function initializeGunSilent()
         local gunRange = getGunRange(currentTool)
         local nearestPlayer = getNearestPlayerGun(gunRange)
         updateVisualsGun(nearestPlayer, true)
+        if GunSilent.Settings.Rage.Value and nearestPlayer then
+            local aimCFrame = getAimCFrameGun(nearestPlayer)
+            local hitData = createHitDataGun(nearestPlayer)
+            if aimCFrame and hitData then
+                game:GetService("ReplicatedStorage").Remotes.Send:FireServer(GunSilent.State.LastEventId + 1, "shoot_gun", currentTool, aimCFrame, hitData)
+            end
+        end
     end)
 end
 
@@ -289,20 +312,16 @@ local function Init(UI, Core, notify)
     GunSilent.Core = Core
     GunSilent.notify = notify
 
-    local LocalPlayer = Players.LocalPlayer
+    local LocalPlayer = Core.PlayerData.LocalPlayer
     if LocalPlayer then
         LocalPlayer.CharacterAdded:Connect(function(character)
             character:WaitForChild("HumanoidRootPart")
             GunSilent.State.LocalCharacter = character
             GunSilent.State.LocalRoot = character.HumanoidRootPart
-            GunSilent.notify("GunSilent", "Local character initialized", true)
         end)
         if LocalPlayer.Character then
             GunSilent.State.LocalCharacter = LocalPlayer.Character
             GunSilent.State.LocalRoot = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-            if GunSilent.State.LocalRoot then
-                GunSilent.notify("GunSilent", "Local character loaded on init", true)
-            end
         end
     end
 
@@ -316,7 +335,6 @@ local function Init(UI, Core, notify)
                 Callback = function(value)
                     GunSilent.Settings.Enabled.Value = value
                     initializeGunSilent()
-                    notify("GunSilent", "GunSilent " .. (value and "Enabled" or "Disabled"), true)
                 end
             })
             UI.Sections.GunSilent:Slider({
@@ -327,7 +345,21 @@ local function Init(UI, Core, notify)
                 Precision = 0,
                 Callback = function(value)
                     GunSilent.Settings.RangePlus.Value = value
-                    notify("GunSilent", "Range Plus set to: " .. value, false)
+                end
+            })
+            UI.Sections.GunSilent:Toggle({
+                Name = "Rage",
+                Default = GunSilent.Settings.Rage.Value,
+                Callback = function(value)
+                    GunSilent.Settings.Rage.Value = value
+                    initializeGunSilent()
+                end
+            })
+            UI.Sections.GunSilent:Toggle({
+                Name = "DoubleTap",
+                Default = GunSilent.Settings.DoubleTap.Value,
+                Callback = function(value)
+                    GunSilent.Settings.DoubleTap.Value = value
                 end
             })
             UI.Sections.GunSilent:Dropdown({
@@ -336,7 +368,6 @@ local function Init(UI, Core, notify)
                 Options = {"Head", "UpperTorso", "HumanoidRootPart"},
                 Callback = function(value)
                     GunSilent.Settings.HitPart.Value = value
-                    notify("GunSilent", "Hit Part set to: " .. value, true)
                 end
             })
             UI.Sections.GunSilent:Toggle({
@@ -344,7 +375,6 @@ local function Init(UI, Core, notify)
                 Default = GunSilent.Settings.UseFOV.Value,
                 Callback = function(value)
                     GunSilent.Settings.UseFOV.Value = value
-                    notify("GunSilent", "Use FOV " .. (value and "Enabled" or "Disabled"), true)
                 end
             })
             UI.Sections.GunSilent:Slider({
@@ -356,7 +386,6 @@ local function Init(UI, Core, notify)
                 Precision = 0,
                 Callback = function(value)
                     GunSilent.Settings.FOV.Value = value
-                    notify("GunSilent", "FOV set to: " .. value)
                 end
             })
             UI.Sections.GunSilent:Toggle({
@@ -364,7 +393,6 @@ local function Init(UI, Core, notify)
                 Default = GunSilent.Settings.ShowCircle.Value,
                 Callback = function(value)
                     GunSilent.Settings.ShowCircle.Value = value
-                    notify("GunSilent", "Show Circle " .. (value and "Enabled" or "Disabled"), true)
                 end
             })
             UI.Sections.GunSilent:Dropdown({
@@ -373,7 +401,14 @@ local function Init(UI, Core, notify)
                 Options = {"Cursor", "Middle"},
                 Callback = function(value)
                     GunSilent.Settings.CircleMethod.Value = value
-                    notify("GunSilent", "Circle Method set to: " .. value, true)
+                end
+            })
+            UI.Sections.GunSilent:Dropdown({
+                Name = "Sort Method",
+                Default = GunSilent.Settings.SortMethod.Value,
+                Options = {"Mouse", "Distance", "Mouse&Distance"},
+                Callback = function(value)
+                    GunSilent.Settings.SortMethod.Value = value
                 end
             })
             UI.Sections.GunSilent:Toggle({
@@ -381,7 +416,20 @@ local function Init(UI, Core, notify)
                 Default = GunSilent.Settings.TargetVisual.Value,
                 Callback = function(value)
                     GunSilent.Settings.TargetVisual.Value = value
-                    notify("GunSilent", "Target Visual " .. (value and "Enabled" or "Disabled"), true)
+                end
+            })
+            UI.Sections.GunSilent:Toggle({
+                Name = "Hitbox Visual",
+                Default = GunSilent.Settings.HitboxVisual.Value,
+                Callback = function(value)
+                    GunSilent.Settings.HitboxVisual.Value = value
+                end
+            })
+            UI.Sections.GunSilent:Toggle({
+                Name = "Show Direction",
+                Default = GunSilent.Settings.ShowDirection.Value,
+                Callback = function(value)
+                    GunSilent.Settings.ShowDirection.Value = value
                 end
             })
             UI.Sections.GunSilent:Slider({
@@ -393,7 +441,6 @@ local function Init(UI, Core, notify)
                 Precision = 0,
                 Callback = function(value)
                     GunSilent.Settings.HitChance.Value = value
-                    notify("GunSilent", "Hit Chance set to: " .. value .. "%")
                 end
             })
         end
