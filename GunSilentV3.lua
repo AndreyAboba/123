@@ -1,482 +1,198 @@
-local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
-local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
+local Aimbot = {}
 
-local GunSilent = {
-    Settings = {
-        Enabled = { Value = false, Default = false },
-        RangePlus = { Value = 50, Default = 50 },
-        HitPart = { Value = "Head", Default = "Head" },
-        UseFOV = { Value = true, Default = true },
-        FOV = { Value = 120, Default = 120 },
-        ShowCircle = { Value = true, Default = true },
-        CircleMethod = { Value = "Cursor", Default = "Cursor" },
-        SortMethod = { Value = "Mouse&Distance", Default = "Mouse&Distance" },
-        TargetVisual = { Value = true, Default = true },
-        HitboxVisual = { Value = true, Default = true },
-        HitChance = { Value = 100, Default = 100 }
-    },
-    State = {
-        LastEventId = 0,
-        LastTool = nil,
-        TargetVisualPart = nil,
-        HitboxVisualPart = nil,
-        FovCircle = nil,
-        Connection = nil,
-        OldFireServer = nil,
-        LocalCharacter = nil,
-        LocalRoot = nil
-    }
+-- Конфигурация аимбота
+local Settings = {
+    FOV = 100, -- Поле зрения
+    ShowFOV = true, -- Показывать круг FOV
+    Hitbox = "Head", -- Хитбокс: "Head", "Torso"
+    Smoothness = 0.2, -- Плавность (0 - мгновенно, 1 - плавно)
+    Enabled = false -- Состояние аимбота
 }
 
-local function isGunTool(tool)
-    local items = game:GetService("ReplicatedStorage"):FindFirstChild("Items")
-    if not items then return false end
-    local gunFolder = items:FindFirstChild("gun")
-    if not gunFolder then return false end
-    return gunFolder:FindFirstChild(tool.Name) ~= nil
-end
-
-local function getGunRange(tool)
-    return (tool and tool:GetAttribute("Range") or 50) + GunSilent.Settings.RangePlus.Value
-end
-
-local function getEquippedGunTool(character)
-    if not character then return nil end
-    for _, child in pairs(character:GetChildren()) do
-        if child.ClassName == "Tool" and isGunTool(child) then
-            return child
-        end
-    end
-    return nil
-end
-
-local function updateFovCircle(deltaTime)
-    if not GunSilent.Settings.ShowCircle.Value then
-        if GunSilent.State.FovCircle then
-            GunSilent.State.FovCircle.Visible = false
-        end
-        return
-    end
-
-    local camera = Workspace.CurrentCamera
-    if not camera then return end
-
-    local fovCircle = GunSilent.State.FovCircle
-    if not fovCircle then
-        fovCircle = Drawing.new("Circle")
-        fovCircle.Thickness = 2
-        fovCircle.NumSides = 100
-        fovCircle.Color = Color3.fromRGB(255, 255, 255)
-        fovCircle.Visible = true
-        fovCircle.Filled = false
-        GunSilent.State.FovCircle = fovCircle
-    end
-
-    local newRadius = math.tan(math.rad(GunSilent.Settings.FOV.Value) / 2) * camera.ViewportSize.X / 2
-    local circlePos
-    if GunSilent.Settings.CircleMethod.Value == "Middle" then
-        circlePos = camera.ViewportSize / 2
-    else
-        circlePos = UserInputService:GetMouseLocation()
-    end
-
-    if fovCircle.Radius ~= newRadius or fovCircle.Position ~= circlePos then
-        fovCircle.Radius = newRadius
-        fovCircle.Position = circlePos
-    end
-    fovCircle.Visible = true
-end
-
-local function isInFov(targetPos, camera)
-    if not GunSilent.Settings.UseFOV.Value then return true end
-    local screenPos, onScreen = camera:WorldToViewportPoint(targetPos)
-    if not onScreen then return false end
-    local referencePos = GunSilent.Settings.CircleMethod.Value == "Middle" and camera.ViewportSize / 2 or UserInputService:GetMouseLocation()
-    local distanceFromReference = (Vector2.new(screenPos.X, screenPos.Y) - referencePos).Magnitude
-    return distanceFromReference <= math.tan(math.rad(GunSilent.Settings.FOV.Value) / 2) * camera.ViewportSize.X / 2
-end
-
-local function getNearestPlayerGun(gunRange)
-    local localRoot = GunSilent.State.LocalRoot
-    if not localRoot then return nil end
-    local rootPos = localRoot.Position
-    local camera = Workspace.CurrentCamera
-    local nearestPlayer, shortestDistance, bestScore = nil, gunRange, math.huge
-    local sortMethod = GunSilent.Settings.SortMethod.Value
-
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= Players.LocalPlayer then
-            local targetChar = player.Character
-            if targetChar and targetChar:FindFirstChild("HumanoidRootPart") and targetChar:FindFirstChild("Humanoid") then
-                local targetRoot = targetChar.HumanoidRootPart
-                local targetHumanoid = targetChar.Humanoid
-                if targetHumanoid.Health > 0 and isInFov(targetRoot.Position, camera) then
-                    local distance = (rootPos - targetRoot.Position).Magnitude
-                    if sortMethod == "Mouse&Distance" then
-                        local screenPos = camera:WorldToViewportPoint(targetRoot.Position)
-                        local cursorDistance = (Vector2.new(screenPos.X, screenPos.Y) - UserInputService:GetMouseLocation()).Magnitude
-                        local score = (distance / (GunSilent.Settings.RangePlus.Value + 50)) + (cursorDistance / camera.ViewportSize.X)
-                        if score < bestScore then
-                            bestScore = score
-                            nearestPlayer = player
-                        end
-                    elseif sortMethod == "Distance" and distance < shortestDistance then
-                        shortestDistance = distance
-                        nearestPlayer = player
-                    elseif sortMethod == "Mouse" then
-                        local screenPos = camera:WorldToViewportPoint(targetRoot.Position)
-                        local cursorDistance = (Vector2.new(screenPos.X, screenPos.Y) - UserInputService:GetMouseLocation()).Magnitude
-                        if cursorDistance < bestScore then
-                            bestScore = cursorDistance
-                            nearestPlayer = player
-                        end
-                    end
-                end
-            end
-        end
-    end
-    return nearestPlayer
-end
-
-local function getAimCFrameGun(target)
-    local localRoot = GunSilent.State.LocalRoot
-    if not target or not target.Character or not localRoot then return nil end
-    local targetChar = target.Character
-    local hitPart = targetChar:FindFirstChild(GunSilent.Settings.HitPart.Value) or targetChar:FindFirstChild("HumanoidRootPart")
-    if not hitPart then return nil end
-    local targetPos = hitPart.Position
-    return CFrame.new(localRoot.Position, targetPos)
-end
-
-local function createHitDataGun(target)
-    local localRoot = GunSilent.State.LocalRoot
-    if not target or not target.Character or not localRoot then return nil end
-    local targetChar = target.Character
-    local hitPart = targetChar:FindFirstChild(GunSilent.Settings.HitPart.Value) or targetChar:FindFirstChild("HumanoidRootPart")
-    if not hitPart then return nil end
-    local targetPos = hitPart.Position
-    local direction = (targetPos - localRoot.Position).Unit
-    return {{Normal = direction, Instance = hitPart, Position = targetPos}}
-end
-
-local function updateVisualsGun(target, hasWeapon)
-    local localRoot = GunSilent.State.LocalRoot
-    if not GunSilent.Settings.Enabled.Value or not hasWeapon or not target or not target.Character or not localRoot then
-        if GunSilent.State.TargetVisualPart then GunSilent.State.TargetVisualPart.Transparency = 1 end
-        if GunSilent.State.HitboxVisualPart then GunSilent.State.HitboxVisualPart.Transparency = 1 end
-        return
-    end
-
-    local targetChar = target.Character
-    local targetHead = targetChar:FindFirstChild("Head") or targetChar:FindFirstChild("HumanoidRootPart")
-    local hitPart = targetChar:FindFirstChild(GunSilent.Settings.HitPart.Value) or targetChar:FindFirstChild("HumanoidRootPart")
-    if not targetHead or not hitPart then return end
-
-    if GunSilent.Settings.TargetVisual.Value then
-        local targetVisualPart = GunSilent.State.TargetVisualPart
-        if not targetVisualPart then
-            targetVisualPart = Instance.new("Part")
-            targetVisualPart.Size = Vector3.new(1, 1, 1)
-            targetVisualPart.Shape = Enum.PartType.Ball
-            targetVisualPart.Anchored = true
-            targetVisualPart.CanCollide = false
-            targetVisualPart.Color = Color3.fromRGB(255, 0, 0)
-            targetVisualPart.Parent = Workspace
-            GunSilent.State.TargetVisualPart = targetVisualPart
-        end
-        targetVisualPart.Position = targetHead.Position + Vector3.new(0, 3, 0)
-        targetVisualPart.Transparency = 0.5
-    elseif GunSilent.State.TargetVisualPart then
-        GunSilent.State.TargetVisualPart.Transparency = 1
-    end
-
-    if GunSilent.Settings.HitboxVisual.Value then
-        local hitboxVisualPart = GunSilent.State.HitboxVisualPart
-        if not hitboxVisualPart then
-            hitboxVisualPart = Instance.new("Part")
-            hitboxVisualPart.Anchored = true
-            hitboxVisualPart.CanCollide = false
-            hitboxVisualPart.Color = Color3.fromRGB(0, 255, 0)
-            hitboxVisualPart.Parent = Workspace
-            GunSilent.State.HitboxVisualPart = hitboxVisualPart
-        end
-        hitboxVisualPart.Size = hitPart.Size + Vector3.new(0.2, 0.2, 0.2)
-        hitboxVisualPart.CFrame = hitPart.CFrame
-        hitboxVisualPart.Transparency = 0.7
-    elseif GunSilent.State.HitboxVisualPart then
-        GunSilent.State.HitboxVisualPart.Transparency = 1
-    end
-end
-
-local function initializeGunSilent()
-    if GunSilent.State.Connection then GunSilent.State.Connection:Disconnect() end
-
-    if not GunSilent.State.OldFireServer then
-        GunSilent.State.OldFireServer = hookfunction(game:GetService("ReplicatedStorage").Remotes.Send.FireServer, function(self, ...)
-            local args = {...}
-            if GunSilent.Settings.Enabled.Value and #args >= 2 and typeof(args[1]) == "number" and args[2] == "shoot_gun" and math.random(100) <= GunSilent.Settings.HitChance.Value then
-                GunSilent.State.LastEventId = args[1]
-                local equippedTool = getEquippedGunTool(GunSilent.State.LocalCharacter)
-                if equippedTool then
-                    local gunRange = getGunRange(equippedTool)
-                    local nearestPlayer = getNearestPlayerGun(gunRange)
-                    if nearestPlayer then
-                        local aimCFrame = getAimCFrameGun(nearestPlayer)
-                        local hitData = createHitDataGun(nearestPlayer)
-                        if aimCFrame and hitData then
-                            return GunSilent.State.OldFireServer(self, GunSilent.State.LastEventId, "shoot_gun", equippedTool, aimCFrame, hitData)
-                        end
-                    end
-                end
-            end
-            return GunSilent.State.OldFireServer(self, unpack(args))
-        end)
-    end
-
-    GunSilent.State.Connection = RunService.Heartbeat:Connect(function(deltaTime)
-        if not GunSilent.Settings.Enabled.Value then
-            if GunSilent.State.FovCircle then GunSilent.State.FovCircle.Visible = false end
-            updateVisualsGun(nil, false)
-            return
-        end
-
-        local character = GunSilent.State.LocalCharacter
-        if not character or not character:FindFirstChild("HumanoidRootPart") then
-            return
-        end
-
-        local currentTool = getEquippedGunTool(character)
-        if currentTool ~= GunSilent.State.LastTool then
-            GunSilent.State.LastTool = currentTool
-        end
-
-        updateFovCircle(deltaTime)
-        if not currentTool then
-            updateVisualsGun(nil, false)
-            return
-        end
-
-        local gunRange = getGunRange(currentTool)
-        local nearestPlayer = getNearestPlayerGun(gunRange)
-        updateVisualsGun(nearestPlayer, true)
-    end)
-end
-
-local function Init(UI, Core, notify)
-    GunSilent.Core = Core
-    GunSilent.notify = notify
-
+-- Инициализация модуля
+function Aimbot.Init(UI, Core, notify)
+    -- Служебные переменные
+    local Players = Core.Services.Players
+    local RunService = Core.Services.RunService
+    local UserInputService = Core.Services.UserInputService
+    local Camera = Core.PlayerData.Camera
     local LocalPlayer = Core.PlayerData.LocalPlayer
-    if LocalPlayer then
-        LocalPlayer.CharacterAdded:Connect(function(character)
-            character:WaitForChild("HumanoidRootPart")
-            GunSilent.State.LocalCharacter = character
-            GunSilent.State.LocalRoot = character.HumanoidRootPart
-        end)
-        if LocalPlayer.Character then
-            GunSilent.State.LocalCharacter = LocalPlayer.Character
-            GunSilent.State.LocalRoot = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-        end
+    local FOVCircle = Drawing.new("Circle")
+
+    -- Настройка круга FOV
+    FOVCircle.Visible = Settings.ShowFOV
+    FOVCircle.Radius = Settings.FOV
+    FOVCircle.Color = Color3.new(1, 0, 0)
+    FOVCircle.Thickness = 2
+    FOVCircle.Filled = false
+    FOVCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+
+    -- Функция проверки видимости игрока
+    local function IsPlayerVisible(player)
+        local character = player.Character
+        if not character or not character:FindFirstChild("HumanoidRootPart") then return false end
+        local ray = Ray.new(Camera.CFrame.Position, (character.HumanoidRootPart.Position - Camera.CFrame.Position).Unit * 1000)
+        local part, position = Core.Services.Workspace:FindPartOnRayWithIgnoreList(ray, {LocalPlayer.Character, Camera})
+        return part and part:IsDescendantOf(character)
     end
 
-    if UI.Tabs.Combat then
-        UI.Sections.GunSilent = UI.Tabs.Combat:Section({ Side = "Right", Name = "GunSilent" })
-        if UI.Sections.GunSilent then
-            local uiElements = {}
+    -- Функция поиска ближайшего игрока
+    local function GetClosestPlayer()
+        local ClosestPlayer = nil
+        local ClosestDistance = Settings.FOV
+        local MousePos = UserInputService:GetMouseLocation()
 
-            UI.Sections.GunSilent:Header({ Name = "GunSilent" })
-            uiElements.GSEnabled = {
-                element = UI.Sections.GunSilent:Toggle({
-                    Name = "Enabled",
-                    Default = GunSilent.Settings.Enabled.Value,
-                    Callback = function(value)
-                        GunSilent.Settings.Enabled.Value = value
-                        initializeGunSilent()
-                        notify("GunSilent", "GunSilent " .. (value and "Enabled" or "Disabled"), true)
+        for _, Player in pairs(Players:GetPlayers()) do
+            if Player ~= LocalPlayer and Player.Character and Player.Character:FindFirstChild(Settings.Hitbox) and IsPlayerVisible(Player) then
+                local Hitbox = Player.Character[Settings.Hitbox]
+                local ScreenPos, OnScreen = Camera:WorldToViewportPoint(Hitbox.Position)
+                if OnScreen then
+                    local Distance = (Vector2.new(ScreenPos.X, ScreenPos.Y) - MousePos).Magnitude
+                    if Distance < ClosestDistance then
+                        ClosestDistance = Distance
+                        ClosestPlayer = Player
                     end
-                }, 'GSEnabled'),
-                callback = function(value)
-                    GunSilent.Settings.Enabled.Value = value
-                    initializeGunSilent()
-                    notify("GunSilent", "GunSilent " .. (value and "Enabled" or "Disabled"), true)
                 end
-            }
-            uiElements.RangePlus = {
-                element = UI.Sections.GunSilent:Slider({
-                    Name = "Range Plus",
-                    Minimum = 0,
-                    Maximum = 200,
-                    Default = GunSilent.Settings.RangePlus.Value,
-                    Precision = 0,
-                    Callback = function(value)
-                        GunSilent.Settings.RangePlus.Value = value
-                    end
-                }, 'RangePlus'),
-                callback = function(value)
-                    GunSilent.Settings.RangePlus.Value = value
-                end
-            }
-            uiElements.HitPart = {
-                element = UI.Sections.GunSilent:Dropdown({
-                    Name = "Hit Part",
-                    Default = GunSilent.Settings.HitPart.Value,
-                    Options = {"Head", "UpperTorso", "HumanoidRootPart"},
-                    Callback = function(value)
-                        GunSilent.Settings.HitPart.Value = value
-                    end
-                }, 'HitPart'),
-                callback = function(value)
-                    GunSilent.Settings.HitPart.Value = value
-                end
-            }
-            uiElements.GSUSEFOV = {
-                element = UI.Sections.GunSilent:Toggle({
-                    Name = "Use FOV",
-                    Default = GunSilent.Settings.UseFOV.Value,
-                    Callback = function(value)
-                        GunSilent.Settings.UseFOV.Value = value
-                    end
-                }, 'GSUSEFOV'),
-                callback = function(value)
-                    GunSilent.Settings.UseFOV.Value = value
-                end
-            }
-            uiElements.GSFOV = {
-                element = UI.Sections.GunSilent:Slider({
-                    Name = "FOV",
-                    Default = GunSilent.Settings.FOV.Value,
-                    Minimum = 0,
-                    Maximum = 120,
-                    DisplayMethod = "Value",
-                    Precision = 0,
-                    Callback = function(value)
-                        GunSilent.Settings.FOV.Value = value
-                    end
-                }, 'GSFOV'),
-                callback = function(value)
-                    GunSilent.Settings.FOV.Value = value
-                end
-            }
-            uiElements.GSShowCircle = {
-                element = UI.Sections.GunSilent:Toggle({
-                    Name = "Show Circle",
-                    Default = GunSilent.Settings.ShowCircle.Value,
-                    Callback = function(value)
-                        GunSilent.Settings.ShowCircle.Value = value
-                    end
-                }, 'GSShowCircle'),
-                callback = function(value)
-                    GunSilent.Settings.ShowCircle.Value = value
-                end
-            }
-            uiElements.GSCircleMethod = {
-                element = UI.Sections.GunSilent:Dropdown({
-                    Name = "Circle Method",
-                    Default = GunSilent.Settings.CircleMethod.Value,
-                    Options = {"Cursor", "Middle"},
-                    Callback = function(value)
-                        GunSilent.Settings.CircleMethod.Value = value
-                    end
-                }, 'GSCircleMethod'),
-                callback = function(value)
-                    GunSilent.Settings.CircleMethod.Value = value
-                end
-            }
-            uiElements.SortMethod = {
-                element = UI.Sections.GunSilent:Dropdown({
-                    Name = "Sort Method",
-                    Default = GunSilent.Settings.SortMethod.Value,
-                    Options = {"Mouse", "Distance", "Mouse&Distance"},
-                    Callback = function(value)
-                        GunSilent.Settings.SortMethod.Value = value
-                    end
-                }, 'SortMethod'),
-                callback = function(value)
-                    GunSilent.Settings.SortMethod.Value = value
-                end
-            }
-            uiElements.TargetVisual = {
-                element = UI.Sections.GunSilent:Toggle({
-                    Name = "Target Visual",
-                    Default = GunSilent.Settings.TargetVisual.Value,
-                    Callback = function(value)
-                        GunSilent.Settings.TargetVisual.Value = value
-                    end
-                }, 'TargetVisual'),
-                callback = function(value)
-                    GunSilent.Settings.TargetVisual.Value = value
-                end
-            }
-            uiElements.HitboxVisual = {
-                element = UI.Sections.GunSilent:Toggle({
-                    Name = "Hitbox Visual",
-                    Default = GunSilent.Settings.HitboxVisual.Value,
-                    Callback = function(value)
-                        GunSilent.Settings.HitboxVisual.Value = value
-                    end
-                }, 'HitboxVisual'),
-                callback = function(value)
-                    GunSilent.Settings.HitboxVisual.Value = value
-                end
-            }
-            uiElements.HitChance = {
-                element = UI.Sections.GunSilent:Slider({
-                    Name = "Hit Chance",
-                    Default = GunSilent.Settings.HitChance.Value,
-                    Minimum = 0,
-                    Maximum = 100,
-                    DisplayMethod = "Percent",
-                    Precision = 0,
-                    Callback = function(value)
-                        GunSilent.Settings.HitChance.Value = value
-                    end
-                }, 'HitChance'),
-                callback = function(value)
-                    GunSilent.Settings.HitChance.Value = value
-                end
-            }
-
-            UI.Sections.GunSilent:Button({
-                Name = "Sync Settings",
-                Callback = function()
-                    uiElements.GSEnabled.callback(uiElements.GSEnabled.element:GetState())
-                    uiElements.RangePlus.callback(uiElements.RangePlus.element:GetValue())
-                    local hitPartOptions = uiElements.HitPart.element:GetOptions()
-                    for option, selected in pairs(hitPartOptions) do
-                        if selected then
-                            uiElements.HitPart.callback(option)
-                            break
-                        end
-                    end
-                    uiElements.GSUSEFOV.callback(uiElements.GSUSEFOV.element:GetState())
-                    uiElements.GSFOV.callback(uiElements.GSFOV.element:GetValue())
-                    uiElements.GSShowCircle.callback(uiElements.GSShowCircle.element:GetState())
-                    local circleMethodOptions = uiElements.GSCircleMethod.element:GetOptions()
-                    for option, selected in pairs(circleMethodOptions) do
-                        if selected then
-                            uiElements.GSCircleMethod.callback(option)
-                            break
-                        end
-                    end
-                    local sortMethodOptions = uiElements.SortMethod.element:GetOptions()
-                    for option, selected in pairs(sortMethodOptions) do
-                        if selected then
-                            uiElements.SortMethod.callback(option)
-                            break
-                        end
-                    end
-                    uiElements.TargetVisual.callback(uiElements.TargetVisual.element:GetState())
-                    uiElements.HitboxVisual.callback(uiElements.HitboxVisual.element:GetState())
-                    uiElements.HitChance.callback(uiElements.HitChance.element:GetValue())
-                    notify("GunSilent", "Settings synchronized with UI!", true)
-                end
-            }, 'SyncSettings')
+            end
         end
+        return ClosestPlayer
     end
 
-    initializeGunSilent()
+    -- Основной цикл аимбота
+    RunService.RenderStepped:Connect(function()
+        FOVCircle.Visible = Settings.ShowFOV and Settings.Enabled
+        if Settings.ShowFOV then
+            FOVCircle.Position = UserInputService:GetMouseLocation()
+        end
+
+        if Settings.Enabled then
+            local Target = GetClosestPlayer()
+            if Target and Target.Character and Target.Character:FindFirstChild(Settings.Hitbox) then
+                local Hitbox = Target.Character[Settings.Hitbox]
+                local TargetPosition = Hitbox.Position
+                local LookVector = (TargetPosition - Camera.CFrame.Position).Unit
+                Camera.CFrame = CFrame.new(Camera.CFrame.Position, Camera.CFrame.Position + LookVector)
+            end
+        end
+    end)
+
+    -- UI для аимбота в секции Combat
+    local CombatSection = UI.Tabs.Combat:Section({ Name = "Aimbot", Side = "Left" })
+    CombatSection:Toggle({
+        Name = "Enabled",
+        Default = Settings.Enabled,
+        Callback = function(value)
+            Settings.Enabled = value
+            notify("Aimbot", value and "Enabled" or "Disabled", false)
+        end
+    }, "AimbotEnabled")
+    CombatSection:Toggle({
+        Name = "Show FOV Circle",
+        Default = Settings.ShowFOV,
+        Callback = function(value)
+            Settings.ShowFOV = value
+            FOVCircle.Visible = value and Settings.Enabled
+        end
+    }, "AimbotShowFOV")
+    CombatSection:Slider({
+        Name = "FOV Radius",
+        Minimum = 50,
+        Maximum = 300,
+        Default = Settings.FOV,
+        Callback = function(value)
+            Settings.FOV = value
+            FOVCircle.Radius = value
+        end
+    }, "AimbotFOV")
+    CombatSection:Dropdown({
+        Name = "Hitbox",
+        Options = { "Head", "Torso" },
+        Default = Settings.Hitbox,
+        Callback = function(value)
+            Settings.Hitbox = value
+        end
+    }, "AimbotHitbox")
+    CombatSection:Slider({
+        Name = "Smoothness",
+        Minimum = 0,
+        Maximum = 1,
+        Default = Settings.Smoothness,
+        Callback = function(value)
+            Settings.Smoothness = value
+        end
+    }, "AimbotSmoothness")
+
+    -- Кнопка на экране
+    local buttonGui = Instance.new("ScreenGui")
+    buttonGui.Name = "AimbotToggleButtonGui"
+    buttonGui.Parent = Core.Services.CoreGuiService
+    buttonGui.ResetOnSpawn = false
+    buttonGui.IgnoreGuiInset = false
+
+    local State = {
+        Button = { Dragging = false, InitialMousePos = nil, InitialButtonPos = nil, TouchStartTime = 0, TouchThreshold = 0.2 }
+    }
+
+    local buttonFrame = Instance.new("Frame")
+    buttonFrame.Size = UDim2.new(0, 50, 0, 50)
+    local centerX = (Camera.ViewportSize.X - 50) / 2
+    local centerY = (Camera.ViewportSize.Y - 50) / 2
+    buttonFrame.Position = UDim2.new(0, centerX, 0, centerY)
+    buttonFrame.BackgroundColor3 = Color3.fromRGB(20, 30, 50)
+    buttonFrame.BackgroundTransparency = 0.3
+    buttonFrame.BorderSizePixel = 0
+    buttonFrame.Parent = buttonGui
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(1, 0)
+    corner.Parent = buttonFrame
+
+    local buttonIcon = Instance.new("ImageLabel")
+    buttonIcon.Size = UDim2.new(0, 30, 0, 30)
+    buttonIcon.Position = UDim2.new(0.5, -15, 0.5, -15)
+    buttonIcon.BackgroundTransparency = 1
+    buttonIcon.Image = "rbxassetid://18821914323"
+    buttonIcon.ImageTransparency = Settings.Enabled and 0 or 0.5
+    buttonIcon.Parent = buttonFrame
+
+    buttonFrame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+            State.Button.TouchStartTime = tick()
+            local mousePos = Vector2.new(input.Position.X, input.Position.Y)
+            State.Button.Dragging = true
+            State.Button.InitialMousePos = mousePos
+            State.Button.InitialButtonPos = Vector2.new(buttonFrame.Position.X.Offset, buttonFrame.Position.Y.Offset)
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) and State.Button.Dragging then
+            local currentMousePos = Vector2.new(input.Position.X, input.Position.Y)
+            if State.Button.InitialMousePos and State.Button.InitialButtonPos then
+                local delta = currentMousePos - State.Button.InitialMousePos
+                local newX = State.Button.InitialButtonPos.X + delta.X
+                local newY = State.Button.InitialButtonPos.Y + delta.Y
+                newX = math.max(0, math.min(newX, Camera.ViewportSize.X - buttonFrame.Size.X.Offset))
+                newY = math.max(0, math.min(newY, Camera.ViewportSize.Y - buttonFrame.Size.Y.Offset))
+                buttonFrame.Position = UDim2.new(0, newX, 0, newY)
+            end
+        end
+    end)
+
+    buttonFrame.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+            State.Button.Dragging = false
+            if tick() - State.Button.TouchStartTime < State.Button.TouchThreshold then
+                Settings.Enabled = not Settings.Enabled
+                buttonIcon.ImageTransparency = Settings.Enabled and 0 or 0.5
+                notify("Aimbot", Settings.Enabled and "Enabled" or "Disabled", false)
+            end
+            State.Button.InitialMousePos = nil
+            State.Button.InitialButtonPos = nil
+        end
+    end)
+
+    notify("Aimbot", "Module loaded successfully", true)
 end
 
-return { Init = Init }
+return Aimbot
