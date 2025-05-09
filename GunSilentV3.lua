@@ -284,99 +284,195 @@ local function Init(UI, Core, notify)
     if UI.Tabs.Combat then
         UI.Sections.GunSilent = UI.Tabs.Combat:Section({ Side = "Right", Name = "GunSilent" })
         if UI.Sections.GunSilent then
+            local uiElements = {}
+
             UI.Sections.GunSilent:Header({ Name = "GunSilent" })
-            UI.Sections.GunSilent:Toggle({
-                Name = "Enabled",
-                Default = GunSilent.Settings.Enabled.Value,
-                Callback = function(value)
+            uiElements.GSEnabled = {
+                element = UI.Sections.GunSilent:Toggle({
+                    Name = "Enabled",
+                    Default = GunSilent.Settings.Enabled.Value,
+                    Callback = function(value)
+                        GunSilent.Settings.Enabled.Value = value
+                        initializeGunSilent()
+                        notify("GunSilent", "GunSilent " .. (value and "Enabled" or "Disabled"), true)
+                    end
+                }, 'GSEnabled'),
+                callback = function(value)
                     GunSilent.Settings.Enabled.Value = value
                     initializeGunSilent()
+                    notify("GunSilent", "GunSilent " .. (value and "Enabled" or "Disabled"), true)
                 end
-            })
-            UI.Sections.GunSilent:Slider({
-                Name = "Range Plus",
-                Minimum = 0,
-                Maximum = 200,
-                Default = GunSilent.Settings.RangePlus.Value,
-                Precision = 0,
-                Callback = function(value)
+            }
+            uiElements.RangePlus = {
+                element = UI.Sections.GunSilent:Slider({
+                    Name = "Range Plus",
+                    Minimum = 0,
+                    Maximum = 200,
+                    Default = GunSilent.Settings.RangePlus.Value,
+                    Precision = 0,
+                    Callback = function(value)
+                        GunSilent.Settings.RangePlus.Value = value
+                    end
+                }, 'RangePlus'),
+                callback = function(value)
                     GunSilent.Settings.RangePlus.Value = value
                 end
-            })
-            UI.Sections.GunSilent:Dropdown({
-                Name = "Hit Part",
-                Default = GunSilent.Settings.HitPart.Value,
-                Options = {"Head", "UpperTorso", "HumanoidRootPart"},
-                Callback = function(value)
+            }
+            uiElements.HitPart = {
+                element = UI.Sections.GunSilent:Dropdown({
+                    Name = "Hit Part",
+                    Default = GunSilent.Settings.HitPart.Value,
+                    Options = {"Head", "UpperTorso", "HumanoidRootPart"},
+                    Callback = function(value)
+                        GunSilent.Settings.HitPart.Value = value
+                    end
+                }, 'HitPart'),
+                callback = function(value)
                     GunSilent.Settings.HitPart.Value = value
                 end
-            })
-            UI.Sections.GunSilent:Toggle({
-                Name = "Use FOV",
-                Default = GunSilent.Settings.UseFOV.Value,
-                Callback = function(value)
+            }
+            uiElements.GSUSEFOV = {
+                element = UI.Sections.GunSilent:Toggle({
+                    Name = "Use FOV",
+                    Default = GunSilent.Settings.UseFOV.Value,
+                    Callback = function(value)
+                        GunSilent.Settings.UseFOV.Value = value
+                    end
+                }, 'GSUSEFOV'),
+                callback = function(value)
                     GunSilent.Settings.UseFOV.Value = value
                 end
-            })
-            UI.Sections.GunSilent:Slider({
-                Name = "FOV",
-                Default = GunSilent.Settings.FOV.Value,
-                Minimum = 0,
-                Maximum = 120,
-                DisplayMethod = "Value",
-                Precision = 0,
-                Callback = function(value)
+            }
+            uiElements.GSFOV = {
+                element = UI.Sections.GunSilent:Slider({
+                    Name = "FOV",
+                    Default = GunSilent.Settings.FOV.Value,
+                    Minimum = 0,
+                    Maximum = 120,
+                    DisplayMethod = "Value",
+                    Precision = 0,
+                    Callback = function(value)
+                        GunSilent.Settings.FOV.Value = value
+                    end
+                }, 'GSFOV'),
+                callback = function(value)
                     GunSilent.Settings.FOV.Value = value
                 end
-            })
-            UI.Sections.GunSilent:Toggle({
-                Name = "Show Circle",
-                Default = GunSilent.Settings.ShowCircle.Value,
-                Callback = function(value)
+            }
+            uiElements.GSShowCircle = {
+                element = UI.Sections.GunSilent:Toggle({
+                    Name = "Show Circle",
+                    Default = GunSilent.Settings.ShowCircle.Value,
+                    Callback = function(value)
+                        GunSilent.Settings.ShowCircle.Value = value
+                    end
+                }, 'GSShowCircle'),
+                callback = function(value)
                     GunSilent.Settings.ShowCircle.Value = value
                 end
-            })
-            UI.Sections.GunSilent:Dropdown({
-                Name = "Circle Method",
-                Default = GunSilent.Settings.CircleMethod.Value,
-                Options = {"Cursor", "Middle"},
-                Callback = function(value)
+            }
+            uiElements.GSCircleMethod = {
+                element = UI.Sections.GunSilent:Dropdown({
+                    Name = "Circle Method",
+                    Default = GunSilent.Settings.CircleMethod.Value,
+                    Options = {"Cursor", "Middle"},
+                    Callback = function(value)
+                        GunSilent.Settings.CircleMethod.Value = value
+                    end
+                }, 'GSCircleMethod'),
+                callback = function(value)
                     GunSilent.Settings.CircleMethod.Value = value
                 end
-            })
-            UI.Sections.GunSilent:Dropdown({
-                Name = "Sort Method",
-                Default = GunSilent.Settings.SortMethod.Value,
-                Options = {"Mouse", "Distance", "Mouse&Distance"},
-                Callback = function(value)
+            }
+            uiElements.SortMethod = {
+                element = UI.Sections.GunSilent:Dropdown({
+                    Name = "Sort Method",
+                    Default = GunSilent.Settings.SortMethod.Value,
+                    Options = {"Mouse", "Distance", "Mouse&Distance"},
+                    Callback = function(value)
+                        GunSilent.Settings.SortMethod.Value = value
+                    end
+                }, 'SortMethod'),
+                callback = function(value)
                     GunSilent.Settings.SortMethod.Value = value
                 end
-            })
-            UI.Sections.GunSilent:Toggle({
-                Name = "Target Visual",
-                Default = GunSilent.Settings.TargetVisual.Value,
-                Callback = function(value)
+            }
+            uiElements.TargetVisual = {
+                element = UI.Sections.GunSilent:Toggle({
+                    Name = "Target Visual",
+                    Default = GunSilent.Settings.TargetVisual.Value,
+                    Callback = function(value)
+                        GunSilent.Settings.TargetVisual.Value = value
+                    end
+                }, 'TargetVisual'),
+                callback = function(value)
                     GunSilent.Settings.TargetVisual.Value = value
                 end
-            })
-            UI.Sections.GunSilent:Toggle({
-                Name = "Hitbox Visual",
-                Default = GunSilent.Settings.HitboxVisual.Value,
-                Callback = function(value)
+            }
+            uiElements.HitboxVisual = {
+                element = UI.Sections.GunSilent:Toggle({
+                    Name = "Hitbox Visual",
+                    Default = GunSilent.Settings.HitboxVisual.Value,
+                    Callback = function(value)
+                        GunSilent.Settings.HitboxVisual.Value = value
+                    end
+                }, 'HitboxVisual'),
+                callback = function(value)
                     GunSilent.Settings.HitboxVisual.Value = value
                 end
-            })
-            UI.Sections.GunSilent:Slider({
-                Name = "Hit Chance",
-                Default = GunSilent.Settings.HitChance.Value,
-                Minimum = 0,
-                Maximum = 100,
-                DisplayMethod = "Percent",
-                Precision = 0,
-                Callback = function(value)
+            }
+            uiElements.HitChance = {
+                element = UI.Sections.GunSilent:Slider({
+                    Name = "Hit Chance",
+                    Default = GunSilent.Settings.HitChance.Value,
+                    Minimum = 0,
+                    Maximum = 100,
+                    DisplayMethod = "Percent",
+                    Precision = 0,
+                    Callback = function(value)
+                        GunSilent.Settings.HitChance.Value = value
+                    end
+                }, 'HitChance'),
+                callback = function(value)
                     GunSilent.Settings.HitChance.Value = value
                 end
-            })
+            }
+
+            UI.Sections.GunSilent:Button({
+                Name = "Sync Settings",
+                Callback = function()
+                    uiElements.GSEnabled.callback(uiElements.GSEnabled.element:GetState())
+                    uiElements.RangePlus.callback(uiElements.RangePlus.element:GetValue())
+                    local hitPartOptions = uiElements.HitPart.element:GetOptions()
+                    for option, selected in pairs(hitPartOptions) do
+                        if selected then
+                            uiElements.HitPart.callback(option)
+                            break
+                        end
+                    end
+                    uiElements.GSUSEFOV.callback(uiElements.GSUSEFOV.element:GetState())
+                    uiElements.GSFOV.callback(uiElements.GSFOV.element:GetValue())
+                    uiElements.GSShowCircle.callback(uiElements.GSShowCircle.element:GetState())
+                    local circleMethodOptions = uiElements.GSCircleMethod.element:GetOptions()
+                    for option, selected in pairs(circleMethodOptions) do
+                        if selected then
+                            uiElements.GSCircleMethod.callback(option)
+                            break
+                        end
+                    end
+                    local sortMethodOptions = uiElements.SortMethod.element:GetOptions()
+                    for option, selected in pairs(sortMethodOptions) do
+                        if selected then
+                            uiElements.SortMethod.callback(option)
+                            break
+                        end
+                    end
+                    uiElements.TargetVisual.callback(uiElements.TargetVisual.element:GetState())
+                    uiElements.HitboxVisual.callback(uiElements.HitboxVisual.element:GetState())
+                    uiElements.HitChance.callback(uiElements.HitChance.element:GetValue())
+                    notify("GunSilent", "Settings synchronized with UI!", true)
+                end
+            }, 'SyncSettings')
         end
     end
 
