@@ -1,13 +1,12 @@
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService") -- Добавлено
+local UserInputService = game:GetService("UserInputService")
 
 local GunSilent = {
     Settings = {
         Enabled = { Value = false, Default = false },
         RangePlus = { Value = 50, Default = 50 },
-        Rage = { Value = false, Default = false },
         HitPart = { Value = "Head", Default = "Head" },
         UseFOV = { Value = true, Default = true },
         FOV = { Value = 120, Default = 120 },
@@ -17,8 +16,7 @@ local GunSilent = {
         TargetVisual = { Value = true, Default = true },
         HitboxVisual = { Value = true, Default = true },
         ShowDirection = { Value = true, Default = true },
-        HitChance = { Value = 100, Default = 100 },
-        DoubleTap = { Value = false, Default = false }
+        HitChance = { Value = 100, Default = 100 }
     },
     State = {
         LastEventId = 0,
@@ -84,7 +82,7 @@ local function updateFovCircle(deltaTime)
     if GunSilent.Settings.CircleMethod.Value == "Middle" then
         circlePos = camera.ViewportSize / 2
     else
-        circlePos = UserInputService:GetMouseLocation() -- Исправлено
+        circlePos = UserInputService:GetMouseLocation()
     end
 
     if fovCircle.Radius ~= newRadius or fovCircle.Position ~= circlePos then
@@ -299,13 +297,6 @@ local function initializeGunSilent()
         local gunRange = getGunRange(currentTool)
         local nearestPlayer = getNearestPlayerGun(gunRange)
         updateVisualsGun(nearestPlayer, true)
-        if GunSilent.Settings.Rage.Value and nearestPlayer then
-            local aimCFrame = getAimCFrameGun(nearestPlayer)
-            local hitData = createHitDataGun(nearestPlayer)
-            if aimCFrame and hitData then
-                game:GetService("ReplicatedStorage").Remotes.Send:FireServer(GunSilent.State.LastEventId + 1, "shoot_gun", currentTool, aimCFrame, hitData)
-            end
-        end
     end)
 end
 
@@ -346,21 +337,6 @@ local function Init(UI, Core, notify)
                 Precision = 0,
                 Callback = function(value)
                     GunSilent.Settings.RangePlus.Value = value
-                end
-            })
-            UI.Sections.GunSilent:Toggle({
-                Name = "Rage",
-                Default = GunSilent.Settings.Rage.Value,
-                Callback = function(value)
-                    GunSilent.Settings.Rage.Value = value
-                    initializeGunSilent()
-                end
-            })
-            UI.Sections.GunSilent:Toggle({
-                Name = "DoubleTap",
-                Default = GunSilent.Settings.DoubleTap.Value,
-                Callback = function(value)
-                    GunSilent.Settings.DoubleTap.Value = value
                 end
             })
             UI.Sections.GunSilent:Dropdown({
