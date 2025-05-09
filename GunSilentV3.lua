@@ -1,6 +1,7 @@
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService") -- Добавлено
 
 local GunSilent = {
     Settings = {
@@ -83,7 +84,7 @@ local function updateFovCircle(deltaTime)
     if GunSilent.Settings.CircleMethod.Value == "Middle" then
         circlePos = camera.ViewportSize / 2
     else
-        circlePos = UserInputService:GetMouseLocation()
+        circlePos = UserInputService:GetMouseLocation() -- Исправлено
     end
 
     if fovCircle.Radius ~= newRadius or fovCircle.Position ~= circlePos then
