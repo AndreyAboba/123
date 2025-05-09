@@ -78,6 +78,7 @@ function Aimbot.Init(UI, Core, notify)
 
     -- UI для аимбота в секции Combat
     local CombatSection = UI.Tabs.Combat:Section({ Name = "Aimbot", Side = "Left" })
+    CombatSection:Header({ Name = "Aimbot" }) -- Добавлен заголовок
     CombatSection:Toggle({
         Name = "Enabled",
         Default = Settings.Enabled,
