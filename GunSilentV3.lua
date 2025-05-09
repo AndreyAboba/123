@@ -114,6 +114,7 @@ local function getNearestPlayerGun(gunRange)
                     if distance <= shortestDistance then
                         shortestDistance = distance
                         nearestPlayer = player
+                        GunSilent.notify("GunSilent", "Target selected: " .. player.Name .. " at distance: " .. math.floor(distance), true)
                     end
                 end
             end
@@ -128,7 +129,8 @@ local function getAimCFrameGun(target)
     local targetChar = target.Character
     local hitPart = targetChar:FindFirstChild(GunSilent.Settings.HitPart.Value) or targetChar:FindFirstChild("HumanoidRootPart")
     if not hitPart then return nil end
-    return CFrame.new(localRoot.Position, hitPart.Position)
+    local aimPos = hitPart.Position
+    return CFrame.new(localRoot.Position, aimPos)
 end
 
 local function createHitDataGun(target)
@@ -137,7 +139,8 @@ local function createHitDataGun(target)
     local targetChar = target.Character
     local hitPart = targetChar:FindFirstChild(GunSilent.Settings.HitPart.Value) or targetChar:FindFirstChild("HumanoidRootPart")
     if not hitPart then return nil end
-    return {{Normal = (hitPart.Position - localRoot.Position).Unit, Instance = hitPart, Position = hitPart.Position}}
+    local direction = (hitPart.Position - localRoot.Position).Unit
+    return {{Normal = direction, Instance = hitPart, Position = hitPart.Position}}
 end
 
 local function updateVisualsGun(target, hasWeapon)
@@ -188,8 +191,8 @@ local function updateVisualsGun(target, hasWeapon)
                 aimBeam.Parent = Workspace
                 GunSilent.State.AimBeam = aimBeam
             end
-            attachment0.Parent = localRoot
-            attachment1.Parent = hitPart
+            aimBeam.Attachment0.Parent = localRoot
+            aimBeam.Attachment1.Parent = hitPart
             aimBeam.Enabled = true
         end
     elseif GunSilent.State.AimBeam then
@@ -203,19 +206,26 @@ local function initializeGunSilent()
     if not GunSilent.State.OldFireServer then
         GunSilent.State.OldFireServer = hookfunction(game:GetService("ReplicatedStorage").Remotes.Send.FireServer, function(self, ...)
             local args = {...}
-            if GunSilent.Settings.Enabled.Value and #args >= 2 and typeof(args[1]) == "number" and math.random(100) <= GunSilent.Settings.HitChance.Value then
+            if GunSilent.Settings.Enabled.Value and #args >= 2 and typeof(args[1]) == "number" and args[2] == "shoot_gun" and math.random(100) <= GunSilent.Settings.HitChance.Value then
                 GunSilent.State.LastEventId = args[1]
                 local equippedTool = getEquippedGunTool(GunSilent.State.LocalCharacter)
-                if equippedTool and args[2] == "shoot_gun" then
+                if equippedTool then
                     local gunRange = getGunRange(equippedTool)
                     local nearestPlayer = getNearestPlayerGun(gunRange)
                     if nearestPlayer then
                         local aimCFrame = getAimCFrameGun(nearestPlayer)
                         local hitData = createHitDataGun(nearestPlayer)
                         if aimCFrame and hitData then
+                            GunSilent.notify("GunSilent", "Firing at target: " .. nearestPlayer.Name, true)
                             return GunSilent.State.OldFireServer(self, GunSilent.State.LastEventId, "shoot_gun", equippedTool, aimCFrame, hitData)
+                        else
+                            GunSilent.notify("GunSilent", "Failed to generate aim data", true)
                         end
+                    else
+                        GunSilent.notify("GunSilent", "No target found within range", true)
                     end
+                else
+                    GunSilent.notify("GunSilent", "No equipped gun tool found", true)
                 end
             end
             return GunSilent.State.OldFireServer(self, unpack(args))
@@ -231,6 +241,7 @@ local function initializeGunSilent()
 
         local character = GunSilent.State.LocalCharacter
         if not character or not character:FindFirstChild("HumanoidRootPart") then
+            GunSilent.notify("GunSilent", "Local character or root part not found", true)
             return
         end
 
@@ -268,10 +279,14 @@ local function Init(UI, Core, notify)
             character:WaitForChild("HumanoidRootPart")
             GunSilent.State.LocalCharacter = character
             GunSilent.State.LocalRoot = character.HumanoidRootPart
+            GunSilent.notify("GunSilent", "Local character initialized", true)
         end)
         if LocalPlayer.Character then
             GunSilent.State.LocalCharacter = LocalPlayer.Character
             GunSilent.State.LocalRoot = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if GunSilent.State.LocalRoot then
+                GunSilent.notify("GunSilent", "Local character loaded on init", true)
+            end
         end
     end
 
