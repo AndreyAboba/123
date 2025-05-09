@@ -193,7 +193,7 @@ function Aimbot.Init(UI, Core, notify)
         end
     end)
 
-    notify("Aimbot", "Module loaded successfully", true)
+    notify("Aimbot", "loaded", true)
 end
 
 return Aimbot
