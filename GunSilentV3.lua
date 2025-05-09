@@ -4,7 +4,7 @@ local Aimbot = {}
 local Settings = {
     FOV = 100, -- Поле зрения
     ShowFOV = true, -- Показывать круг FOV
-    Hitbox = "Head", -- Хитбокс: "Head", "Torso"
+    Hitbox = "Head", -- Хитбокс: "Head", "HumanoidRootPart"
     Smoothness = 0.2, -- Плавность (0 - мгновенно, 1 - плавно)
     Enabled = false -- Состояние аимбота
 }
@@ -71,14 +71,15 @@ function Aimbot.Init(UI, Core, notify)
                 local Hitbox = Target.Character[Settings.Hitbox]
                 local TargetPosition = Hitbox.Position
                 local LookVector = (TargetPosition - Camera.CFrame.Position).Unit
-                Camera.CFrame = CFrame.new(Camera.CFrame.Position, Camera.CFrame.Position + LookVector)
+                local SmoothLookVector = Camera.CFrame.LookVector:Lerp(LookVector, 1 - Settings.Smoothness)
+                Camera.CFrame = CFrame.new(Camera.CFrame.Position, Camera.CFrame.Position + SmoothLookVector)
             end
         end
     end)
 
     -- UI для аимбота в секции Combat
     local CombatSection = UI.Tabs.Combat:Section({ Name = "Aimbot", Side = "Left" })
-    CombatSection:Header({ Name = "Aimbot" }) -- Добавлен заголовок
+    CombatSection:Header({ Name = "Aimbot" })
     CombatSection:Toggle({
         Name = "Enabled",
         Default = Settings.Enabled,
@@ -107,7 +108,7 @@ function Aimbot.Init(UI, Core, notify)
     }, "AimbotFOV")
     CombatSection:Dropdown({
         Name = "Hitbox",
-        Options = { "Head", "Torso" },
+        Options = { "Head", "HumanoidRootPart" },
         Default = Settings.Hitbox,
         Callback = function(value)
             Settings.Hitbox = value
@@ -120,7 +121,7 @@ function Aimbot.Init(UI, Core, notify)
         Default = Settings.Smoothness,
         Callback = function(value)
             Settings.Smoothness = value
-        end
+        }
     }, "AimbotSmoothness")
 
     -- Кнопка на экране
@@ -193,7 +194,7 @@ function Aimbot.Init(UI, Core, notify)
         end
     end)
 
-    notify("Aimbot", "loaded", true)
+    notify("Aimbot", "Module loaded successfully", true)
 end
 
 return Aimbot
